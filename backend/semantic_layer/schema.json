@@ -1,0 +1,15 @@
+{
+  "tables": [
+    {
+      "name": "anchor_view",
+      "description": "Primary curated view for analytics queries.",
+      "columns": [
+        {"name": "condition_source_value", "type": "string", "description": "Diagnosis (Topo-Histo code)"},
+        {"name": "condition_start_date", "type": "date", "description": "Diagnosis date"},
+        {"name": "year", "type": "integer", "description": "Diagnosis year (derived)"},
+        {"name": "cancer_type", "type": "string", "description": "Cancer type label (derived)"},
+        {"name": "stage", "type": "string", "description": "Cancer stage (derived)"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "count_patients": {
+    "description": "Number of patients",
+    "sql": "COUNT(*)"
+  }
+}

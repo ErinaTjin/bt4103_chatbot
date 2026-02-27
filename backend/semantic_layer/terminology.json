@@ -1,0 +1,12 @@
+{
+  "fields": {
+    "stage": ["stage", "cancer_stage", "ajcc_stage", "pathologic_stage"],
+    "cancer_type": ["cancer type", "diagnosis", "primary site", "tumor type"],
+    "year": ["year", "diagnosis year"],
+    "sex": ["sex", "gender"],
+    "age": ["age", "age at diagnosis"]
+  },
+  "values": {
+    "colorectal cancer": ["colorectal", "crc", "colon cancer", "rectal cancer"]
+  }
+}

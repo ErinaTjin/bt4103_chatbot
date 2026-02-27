@@ -1,0 +1,6 @@
+{
+  "diagnosis": "condition_source_value",
+  "cancer_type": "condition_source_value",
+  "diagnosis_date": "condition_start_date",
+  "year": "condition_start_date"
+}
