@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
@@ -17,7 +17,7 @@ class Intent(str, Enum):
 class Filter(BaseModel):
     field: str
     op: str
-    value: str
+    value: Union[str, int, float]
 
 
 class QueryPlan(BaseModel):
