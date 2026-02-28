@@ -5,7 +5,7 @@ import requests
 class LLMAdapter:
     def __init__(
         self,
-        model: str = "qwen2.5-coder:7b",
+        model: str = "qwen2.5-coder:14b",
         base_url: str = "http://localhost:11434",
         temperature: float = 0,
         num_ctx: int = 1024,
