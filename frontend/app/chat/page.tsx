@@ -1,0 +1,101 @@
+"use client";
+
+import { useState } from "react";
+import { Message } from "@/lib/types";
+import { queryBackend } from "@/lib/api";
+import { MessageBubble } from "@/components/MessageBubble";
+import { ChatInput } from "@/components/ChatInput";
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "1",
+      content: "Hello! Ask me anything about the cancer data.",
+      timestamp: new Date(),
+    },
+  ]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSend = async (content: string) => {
+    // Add user message
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
+      const result = await queryBackend(content);
+
+      // Add assistant message with results
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "Here are your results:",
+        result,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      // Handle errors
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "Sorry, something went wrong.",
+        result: {
+          data: [],
+          sql: "",
+          query_plan: {
+            intent: "unsupported",
+            metric: "",
+            dimensions: [],
+            filters: [],
+            limit: 0,
+            needs_clarification: false,
+            clarification_question: null,
+          },
+          guardrails: { ok: false, warnings: [] },
+          error: "Failed to connect to server",
+        },
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen max-w-6xl mx-auto">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map((message, index) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            isUser={index % 2 === 0}
+          />
+        ))}
+
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 rounded-lg p-4">
+              <div className="flex space-x-2">
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                <div
+                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0.2s" }}
+                />
+                <div
+                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0.4s" }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <ChatInput onSend={handleSend} disabled={isLoading} />
+    </div>
+  );
+}
