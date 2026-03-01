@@ -63,7 +63,14 @@ def build_sql(plan: QueryPlan, metrics: dict | None = None) -> str:
             f"LIMIT {limit}"
         )
 
-    if plan.intent == "comparison":
+    if plan.intent == "count":
+        return (
+            f"SELECT {metric_sql} "
+            f"FROM {VIEW_NAME}{filters_sql} "
+            f"LIMIT {limit}"
+        )
+
+    if plan.intent == "cohort_comparison":
         dim1 = plan.dimensions[0] if len(plan.dimensions) > 0 else "stage"
         dim2 = plan.dimensions[1] if len(plan.dimensions) > 1 else "cancer_type"
         return (

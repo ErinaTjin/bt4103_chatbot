@@ -1,15 +1,27 @@
 import { QueryResponse } from './types';
-import { mockSuccessResponse } from './mockData';
+import * as mocks from './mockData';
 
 // API wrapper for backend communication
-// Currently using mock data, need real API when backend is ready
-
+// Logic-based mock mode for demonstration
 export async function queryBackend(message: string): Promise<QueryResponse> {
-  console.log('User query:', message);
-  
+  console.log('User query (Logic Mock):', message);
+  const query = message.toLowerCase();
+
+  let response = mocks.mockTableResponse;
+
+  if (query.includes('pie')) {
+    response = mocks.mockPieResponse;
+  } else if (query.includes('bar')) {
+    response = mocks.mockBarResponse;
+  } else if (query.includes('line') || query.includes('trend')) {
+    response = mocks.mockLineResponse;
+  } else if (query.includes('stage') || query.includes('distribution')) {
+    response = mocks.mockPieResponse; // default distribution to pie
+  }
+
   return new Promise((resolve) => {
     setTimeout(() => {
-      resolve(mockSuccessResponse);
-    }, 1500); // Simulate API call with 1.5s delay
+      resolve(response);
+    }, 1500); // Simulate network delay
   });
 }

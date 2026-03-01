@@ -1,17 +1,23 @@
 // Based on Python backend models
 // May need to change the variable name based on backend
 
-export type Intent = 
+export type Intent =
+  | "count"
   | "distribution"
-  | "trend" 
+  | "trend"
   | "topN"
-  | "comparison"
+  | "mutation_prevalence"
+  | "cohort_comparison"
   | "unsupported";
 
 export interface Filter {
   field: string;
   op: string;
-  value: string | number;
+  value: string | number | (string | number)[];
+}
+
+export interface OutputPrefs {
+  preferred_visualization?: "bar" | "line" | "pie" | "table" | string | null;
 }
 
 export interface QueryPlan {
@@ -20,6 +26,7 @@ export interface QueryPlan {
   dimensions: string[];
   filters: Filter[];
   limit: number;
+  output?: OutputPrefs;
   needs_clarification: boolean;
   clarification_question: string | null;
 }
