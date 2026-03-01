@@ -3,6 +3,10 @@
 
 from pydantic import BaseModel
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv
 
 class Settings(BaseModel):
     DUCKDB_PATH: str = "data/anchor.duckdb"     # persistent db file
@@ -10,7 +14,7 @@ class Settings(BaseModel):
     MAX_ROWS_DEFAULT: int = 5000                # default LIMIT for results
     MAX_ROWS_HARD: int = 20000                  # hard cap to prevent abuse
     THREADS: int = 4                            # DuckDB parallelism
-
+    PARQUET_KEY: str = os.getenv("PARQUET_KEY", "")
 settings = Settings()
 
 # Ensure folders exist so startup doesn't crash
