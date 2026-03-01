@@ -1,15 +1,92 @@
 {
-  "tables": [
+  "tables": {
+      "person": {
+        "description": "Patient demographic information", 
+        "columns":[
+          {"name": "person_id", "type": "int", "description": "unique identifier that joins this table to other tables"},
+          {"name": "gender_source_value", "type": "str", "description": "gender of patient"},
+          {"name": "year_of_birth", "type": "int", "description": "use to calculate age: YEAR(CURRENT_DATE) - year_of_birth"},
+          {"name": "race_concept_value", "type": "int", "description": "race as a concept id.38003579 = Chinese, 41949700 = Malay, 38003574 = Indian, 8515 = Asian Other, NULL = Other."} 
+        ]
+      }, 
+      "condition_occurence" : {
+        "description": "Condition of patient", 
+        "columns": [
+          {"name": "person_id", "type": "int", "description": "use to join to person"},
+          {"name": "condition_occurrence_id", "type": "int", "description": "primary key"},
+          {"name": "condition_start_date", "type": "date", "description": "date of diasgnosis"}, 
+          {"name": "condition_source_value", "type": "str", "description": "condition: topo code || topo description || histo code || histo description"}
+        ]
+      },
+      "procedure_occurence" : {
+        "description": "Surgery and Radiotherapy information", 
+        "columns": [
+          {"name": "person_id", "type": "int", "description": "use to join to person"},
+          {"name": "procedure_occurrence_id", "type": "int", "description": "primary key"},
+          {"name": "institution", "type": "str", "description": "location of surgery"}, 
+          {"name": "procedure_concept_id", "type": "int", "description": "conceptID of procedure, NULL for surgery"}, 
+          {"name": "procedure_source_value", "type": "str", "description": "Source description of surgery or radiotherapy"}, 
+          {"name": "procedure_datetime", "type": "date", "description": "START date and time of procedure"}, 
+          {"name": "procedure_end_datetime", "type": "date", "description": "END date and time of procedure"}, 
+          {"name": "TOSP", "type": "str", "description": "table of surgical procedures, usually used for billing classification"} 
+        ]
+      },
+      "measurement_mutation" : {
+        "description": "staging, mutation, grade, laterality information", 
+        "columns": [
+          {"name": "person_id", "type": "int", "description": "use to join to person"},
+          {"name": "measurement_id", "type": "int", "description": "primary key"},
+          {"name": "institution", "type": "str", "description": "location of surgery"}, 
+          {"name": "measurement_concept_name", "type": "str", "description": "type of measurement. key values: TNM Clin Stage Group, TNM Path Stage Group, TNM Clin T, TNM Clin N, TNM Clin M, BRAF Mutation Conclusion, KRAS Mutation Conclusion, NRAS Mutation Conclusion, APC Mutation Conclusion, Grade, Laterality"}, 
+          {"name": "value_as_concept_name", "type": "str", "description": "result of the measurement eg. mutation detected, stage number/classification"}, 
+          {"name": "measurement_event_id", "type": "int", "description": "use to join procedure_occurrence_id"}
+        ]
+      },
+      "death" : {
+        "description": "death records. always left join so living patients are not excluded", 
+        "columns": [
+          {"name": "person_id", "type": "int", "description": "use to join to person"},
+          {"name": "death_date", "type": "date", "description": "date of death"}, 
+          {"name": "casue_source_value", "type": "str", "description": "cause of death"} 
+        ]
+      }, 
+      "drug_exposure_cancerdrugs" : {
+        "description": "cancerdrug treatments", 
+        "columns": [
+          {"name": "person_id", "type": "int", "description": "use to join to person"},
+          {"name": "drug_exposure_id", "type": "int", "description": "primary key"}, 
+          {"name": "drug_source_value", "type": "str", "description": "prescribed drug: NDC || Gemscript code"}, 
+          {"name": "drug_procedure_start_date", "type": "date", "description": "START date of prescribed drug"},
+          {"name": "drug_procedure_end_date", "type": "date", "description": "END date of prescribed drug"}, 
+          {"name": "institution", "type": "str", "description": "location where drug was prescribed"}
+        ]
+      }
+  }, 
+  "joins": [
     {
-      "name": "anchor_view",
-      "description": "Primary curated view for analytics queries.",
-      "columns": [
-        {"name": "condition_source_value", "type": "string", "description": "Diagnosis (Topo-Histo code)"},
-        {"name": "condition_start_date", "type": "date", "description": "Diagnosis date"},
-        {"name": "year", "type": "integer", "description": "Diagnosis year (derived)"},
-        {"name": "cancer_type", "type": "string", "description": "Cancer type label (derived)"},
-        {"name": "stage", "type": "string", "description": "Cancer stage (derived)"}
-      ]
+      "left": "person.person_id",
+      "right": "condition_occurrence.person_id",
+      "type": "inner"
+    },
+    {
+      "left": "person.person_id",
+      "right": "procedure_occurrence.person_id",
+      "type": "inner"
+    },
+    {
+      "left": "person.person_id",
+      "right": "measurement_mutation.person_id",
+      "type": "inner"
+    },
+    {
+      "left": "person.person_id",
+      "right": "death.person_id",
+      "type": "left"
+    },
+    {
+      "left": "person.person_id",
+      "right": "drug_exposure_cancerdrugs.person_id",
+      "type": "inner"
     }
   ]
 }
