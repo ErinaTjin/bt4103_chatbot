@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union, Any
 
 from pydantic import BaseModel, Field, validator
 
@@ -19,16 +19,23 @@ class Intent(str, Enum):
 class Filter(BaseModel):
     field: str
     op: str
-    value: str
+    value: Union[str, int, float, List[Union[str, int, float]]]
+
+
+class SortOption(BaseModel):
+    field: str
+    direction: str = Field(default="desc", pattern="^(asc|desc)$")
+
+
+class OutputPrefs(BaseModel):
+    preferred_visualization: Optional[str] = None
 
 
 class QueryPlan(BaseModel):
     intent: Intent
     metric: str = Field(default="count_patients")
     dimensions: List[str] = Field(default_factory=list)
-    time_grain: Optional[str] = None
     filters: List[Filter] = Field(default_factory=list)
-    cohort: Optional[Any] = None  # Placeholder for complex cohort definitions
     sort: List[SortOption] = Field(default_factory=list)
     limit: int = Field(default=50)
     output: Optional[OutputPrefs] = None
