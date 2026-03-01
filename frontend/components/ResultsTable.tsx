@@ -9,17 +9,17 @@ import {
   SortingState,
   ColumnDef,
 } from "@tanstack/react-table";
-import { DataRow } from "@/lib/types"; // Import from types
+import { DataRow } from "@/lib/types";
 
 interface ResultsTableProps {
-  data: DataRow[]; // Use the type
+  data: DataRow[];
 }
 
 export function ResultsTable({ data }: ResultsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
   const columns = useMemo<ColumnDef<DataRow>[]>(() => {
-    if (data.length === 0) return [];
+    if (!data || data.length === 0) return [];
 
     return Object.keys(data[0]).map((key) => ({
       accessorKey: key,
@@ -27,7 +27,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
       cell: ({ getValue }) => {
         const value = getValue();
         if (typeof value === "number") {
-          return value.toLocaleString(); // Format numbers
+          return value.toLocaleString();
         }
         return value;
       },
@@ -43,48 +43,59 @@ export function ResultsTable({ data }: ResultsTableProps) {
     getSortedRowModel: getSortedRowModel(),
   });
 
-  if (data.length === 0) return null;
+  if (!data || data.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto border rounded-lg">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th
-                  key={header.id}
-                  onClick={header.column.getToggleSortingHandler()}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                >
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                  {{
-                    asc: " ↑",
-                    desc: " ↓",
-                  }[header.column.getIsSorted() as string] ?? null}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="hover:bg-gray-50">
-              {row.getVisibleCells().map((cell) => (
-                <td
-                  key={cell.id}
-                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
-                >
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-white">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm border-collapse">
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className="bg-gray-50/50 border-bottom border-gray-100">
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    onClick={header.column.getToggleSortingHandler()}
+                    className="px-4 py-3 font-semibold text-gray-500 transition-colors hover:text-gray-900 cursor-pointer select-none"
+                  >
+                    <div className="flex items-center space-x-1">
+                      <span>
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                      </span>
+                      <span className="w-4 h-4 flex items-center justify-center">
+                        {{
+                          asc: "↑",
+                          desc: "↓",
+                        }[header.column.getIsSorted() as string] ?? null}
+                      </span>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {table.getRowModel().rows.map((row) => (
+              <tr
+                key={row.id}
+                className="group transition-colors hover:bg-blue-50/30"
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td
+                    key={cell.id}
+                    className="px-4 py-3 text-gray-600 group-hover:text-blue-900 transition-colors"
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
