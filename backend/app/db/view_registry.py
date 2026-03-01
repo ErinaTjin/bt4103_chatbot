@@ -16,6 +16,7 @@ VIEW_SPECS = {
 }
 
 SCHEMA = "anchor_view"
+KEY_NAME = "cap26_key"
 
 #Accepts a duckdb connection and creates views inside duckdb; runs once during FastAPI startup
 def register_views(con):
@@ -29,8 +30,12 @@ def register_views(con):
 
         # Create stable view name anchor.<view_name>
         # Create OR REPLACE makes it safe to run repeatedly on restart
+
         sql = f"""
         CREATE OR REPLACE VIEW "{SCHEMA}"."{view_name}" AS
-        SELECT * FROM read_parquet('{file_path}');
+        SELECT * FROM read_parquet(
+        '{file_path}',
+        encryption_config = {{footer_key: '{KEY_NAME}'}}
+        );
         """
         con.execute(sql)
