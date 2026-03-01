@@ -2,7 +2,6 @@
 #central place for settings e.g. paths
 
 from pydantic import BaseModel
-import os
 from pathlib import Path
 from dotenv import load_dotenv
 import os
@@ -10,16 +9,13 @@ import os
 load_dotenv
 
 class Settings(BaseModel):
-    DUCKDB_PATH: str = "data/nccs_cap26"
+    DUCKDB_PATH: str = "data/nccs_cap26.db"
     PARQUET_DIR: str = "data/parquet"           # folder containing parquet files
-    PARQUET_KEY_NAME: str = "cap26"
-    #setting the key in windows powershell: setx PARQUET_KEY "YOUR_KEY"
-    # or in VScode $env:PARQUET_KEY="YOUR_KEY"
-    PARQUET_KEY: str | None = os.getenv("PARQUET_KEY") 
     MAX_ROWS_DEFAULT: int = 5000                # default LIMIT for results
     MAX_ROWS_HARD: int = 20000                  # hard cap to prevent abuse
     THREADS: int = 4                            # DuckDB parallelism
     PARQUET_KEY: str = os.getenv("PARQUET_KEY", "")
+
 settings = Settings()
 
 # Ensure folders exist so startup doesn't crash
