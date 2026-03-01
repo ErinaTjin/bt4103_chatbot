@@ -1,5 +1,5 @@
 #sql_guard.py
-
+#ensure read only
 import re
 
 DISALLOWED_KEYWORDS = [
