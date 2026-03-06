@@ -24,6 +24,7 @@ class SemanticLayer:
     terminology_fields: Dict[str, List[str]]
     terminology_values: Dict[str, List[str]]
     metrics: Dict[str, Dict[str, str]]
+    joins: List[dict] 
 
 
 class SemanticLayerLoader:
@@ -36,7 +37,7 @@ class SemanticLayerLoader:
         metrics = self._load_json("metrics.json")
 
         tables: Dict[str, Table] = {}
-        for t in schema.get("tables", []):
+        for table_name, t in schema.get("tables", {}).items():
             cols = [
                 Column(
                     name=c.get("name", ""),
@@ -45,8 +46,8 @@ class SemanticLayerLoader:
                 )
                 for c in t.get("columns", [])
             ]
-            tables[t.get("name", "")] = Table(
-                name=t.get("name", ""),
+            tables[table_name] = Table(
+                name=table_name,
                 description=t.get("description", ""),
                 columns=cols,
             )
@@ -56,6 +57,7 @@ class SemanticLayerLoader:
             terminology_fields=terminology.get("fields", {}),
             terminology_values=terminology.get("values", {}),
             metrics=metrics,
+            joins=schema.get("joins", [])
         )
 
     def _load_json(self, filename: str) -> dict:
