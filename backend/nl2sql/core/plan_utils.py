@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 from .field_mapper import FieldMapper
 from .models import QueryPlan
-from nl2sql.schema_loader import CdmDictionary
+from ..schema_loader import CdmDictionary
 
 
 def normalize_plan_fields(
