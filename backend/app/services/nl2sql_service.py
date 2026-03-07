@@ -2,9 +2,10 @@
 
 import os
 from pathlib import Path
+from app.config import settings
 
-from nl2sql.engine import NL2SQLEngine
-from backend.semantic_layer.loader import SemanticLayerLoader
+from backend.nl2sql.core.engine import NL2SQLEngine
+from backend.nl2sql.semantic.loader import SemanticLayerLoader
 from app.db.query_executor import execute_sql
 from app.db.duckdb_manager import duckdb_manager
 
@@ -17,8 +18,7 @@ class NL2SQLService:
         """
         Load semantic layer and initialize NL2SQL engine once at startup.
         """
-        project_root = Path(__file__).resolve().parents[2]
-        semantic_dir = project_root / "semantic_layer"
+        semantic_dir = Path(settings.SEMANTIC_LAYER_DIR)
 
         semantic_api = None
         if semantic_dir.exists() and semantic_dir.is_dir():

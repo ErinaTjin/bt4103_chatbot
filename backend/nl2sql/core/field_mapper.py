@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Optional
 
-from .schema_loader import CdmDictionary, _norm
+from nl2sql.schema_loader import CdmDictionary, _norm
 
 
 class FieldMapper:
