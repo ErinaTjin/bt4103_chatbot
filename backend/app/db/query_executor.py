@@ -1,38 +1,39 @@
-#query_executor.py
+# query_executor.py
 
-import time #for time.perf_counter()
+from __future__ import annotations
+
+import time
+
 from app.config import settings
-from app.db.sql_guard import ensure_select_only
+from app.db.sql_policy import enforce_sql_policy
+from app.db.view_registry import SCHEMA, VIEW_SPECS
 
-#applies default limit if sql doesn't already contain limit
-def apply_limit(sql: str, limit: int) -> str:
-    if " limit " in sql.lower():
-        return sql
-    return f"{sql}\nLIMIT {limit}"
 
-#main execution function
 def execute_sql(con, sql: str, row_limit: int | None = None):
-    safe_sql = ensure_select_only(sql) #check sql before execution, raise error if needed
+    # Final enforced cap at execution time
+    hard_limit = row_limit or settings.MAX_ROWS_DEFAULT
+    hard_limit = min(hard_limit, settings.MAX_ROWS_HARD)
 
-    # Apply sensible limits
-    limit = row_limit or settings.MAX_ROWS_DEFAULT
-    limit = min(limit, settings.MAX_ROWS_HARD)
-    safe_sql = apply_limit(safe_sql, limit)
+    safe_sql = enforce_sql_policy(
+        sql,
+        allowed_tables=VIEW_SPECS.keys(),
+        allowed_schema=SCHEMA,
+        hard_limit=hard_limit,
+    )
 
-    start = time.perf_counter() #record start time
-    cur = con.execute(safe_sql) #sends SQL to duckdb, which parses and executes it, returns result object
+    start = time.perf_counter()
+    cur = con.execute(safe_sql)
 
-    cols = [d[0] for d in cur.description] #extract col names
-    raw_rows = cur.fetchall() #all rows
-    elapsed_ms = int((time.perf_counter() - start) * 1000) #execution time
+    cols = [d[0] for d in cur.description]
+    raw_rows = cur.fetchall()
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
 
-    # Convert to list of dicts for JSON
-    rows = [dict(zip(cols, r)) for r in raw_rows] #convert rows to json friendly format
+    rows = [dict(zip(cols, r)) for r in raw_rows]
 
     return {
         "columns": cols,
         "rows": rows,
         "row_count": len(rows),
         "elapsed_ms": elapsed_ms,
-        "applied_limit": limit,
+        "applied_limit": hard_limit,
     }

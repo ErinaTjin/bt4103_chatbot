@@ -11,12 +11,11 @@ from backend.nl2sql.core.extractor import QueryExtractor
 from backend.nl2sql.core.plan_utils import (
     normalize_plan_fields,
     normalize_filter_values,
-    validate_plan_fields,
 )
+from backend.nl2sql.core.guardrails import validate_query_plan
 from .field_mapper import FieldMapper
 from .physical_planner import PhysicalPlanner
 from .sql_builder import build_sql
-from .guardrails import check_sql
 
 
 # container for the final result
@@ -42,18 +41,6 @@ class NL2SQLEngine:
         llm: LLMAdapter | None = None,
         semantic_api: Any = None,
     ):
-        """
-        Initializes the NL->SQL Engine.
-
-        Args:
-            llm: The LLM adapter used for QueryPlan extraction.
-            semantic_api: Loaded semantic layer object containing:
-                - tables
-                - terminology_fields
-                - terminology_values
-                - metrics
-                - joins
-        """
         self.llm = llm or LLMAdapter()
         self.extractor = QueryExtractor(self.llm)
         self.semantic_api = semantic_api
@@ -64,7 +51,7 @@ class NL2SQLEngine:
         self.value_synonyms = self._init_value_synonyms()
         self.metrics = self._init_metrics()
 
-        # New: logical -> physical planning layer
+        # logical -> physical planning layer
         self.planner = PhysicalPlanner(semantic_api=self.semantic_api)
 
     # mapping terminology via semantic layer
@@ -105,9 +92,6 @@ class NL2SQLEngine:
 
     # converts semantic layer metadata into text description to be given to LLM
     def _build_schema_context(self) -> str:
-        """
-        Serializes the loaded semantic layer tables into a readable string for the LLM.
-        """
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
             return "No schema context provided."
 
@@ -120,7 +104,6 @@ class NL2SQLEngine:
                 desc = f" - {col.description}" if getattr(col, "description", "") else ""
                 lines.append(f"  * {col.name} ({col.type}){desc}")
 
-        # optionally expose joins to the LLM for better planning quality
         if hasattr(self.semantic_api, "joins") and self.semantic_api.joins:
             lines.append("Joins:")
             for j in self.semantic_api.joins:
@@ -140,7 +123,6 @@ class NL2SQLEngine:
         from .models import Filter
 
         for k, v in active_filters.items():
-            # Avoid duplicates
             if not any(f.field == k for f in plan.filters):
                 plan.filters.append(Filter(field=k, op="=", value=v))
 
@@ -152,17 +134,6 @@ class NL2SQLEngine:
         user_query: str,
         active_filters: Dict[str, Any] | None = None,
     ) -> TranslationResult:
-        """
-        Translates a natural language query into safe, ready-to-execute SQL.
-        Pipeline:
-            1. LLM extracts QueryPlan
-            2. Semantic normalization
-            3. Validate fields
-            4. Build PhysicalPlan
-            5. Render SQL from PhysicalPlan
-            6. Run guardrails
-        """
-        # Build schema context for LLM extraction
         schema_context_str = self._build_schema_context()
         constraints_str = (
             "Strictly use only the allowed fields. "
@@ -170,14 +141,13 @@ class NL2SQLEngine:
             "Do not output SQL."
         )
 
-        # 1. Extract intent & structured slots (JSON)
+        # 1. Extract plan
         plan = self.extractor.extract(
             question=user_query,
             schema_context=schema_context_str,
             constraints=constraints_str,
         )
 
-        # Early return for clarification flow
         if getattr(plan, "needs_clarification", False):
             return TranslationResult(
                 sql="",
@@ -187,30 +157,32 @@ class NL2SQLEngine:
                 warnings=[plan.clarification_question or "Clarification required."],
             )
 
-        # Merge active filters if any
+        # 2. Merge active filters
         plan = self._merge_active_filters(plan, active_filters)
 
-        # 2. Semantic Mapping (user terms -> canonical field names)
+        # 3. Semantic normalization
         plan = normalize_plan_fields(plan, self.mapper, None)
         plan = normalize_filter_values(plan, self.value_synonyms)
 
-        # 3. Field validation
-        field_warnings = validate_plan_fields(
+        # 4. Structured-plan validation
+        plan_warnings = validate_query_plan(
             plan,
-            self.allowed_fields if self.allowed_fields else None,
+            allowed_fields=self.allowed_fields if self.allowed_fields else None,
+            allowed_metrics=set(self.metrics.keys()) if self.metrics else None,
+            max_limit=1000,
+            require_aggregation_metric=False,
         )
 
-        # If extracted fields are unknown, do not continue into planner
-        if field_warnings:
+        if plan_warnings:
             return TranslationResult(
                 sql="",
                 plan=plan,
                 physical_plan=None,
                 valid=False,
-                warnings=field_warnings,
+                warnings=plan_warnings,
             )
 
-        # Unsupported intent guard
+        # 5. Unsupported intent guard
         if str(plan.intent) == "Intent.unsupported" or getattr(plan.intent, "value", "") == "unsupported":
             return TranslationResult(
                 sql="",
@@ -220,7 +192,7 @@ class NL2SQLEngine:
                 warnings=["Unsupported query intent."],
             )
 
-        # 4. Logical -> Physical planning
+        # 6. Build physical plan
         try:
             physical_plan = self.planner.build(plan, metrics=self.metrics)
         except Exception as e:
@@ -232,7 +204,7 @@ class NL2SQLEngine:
                 warnings=[f"Physical planning failed: {e}"],
             )
 
-        # 5. Deterministic SQL generation from PhysicalPlan
+        # 7. Build SQL
         try:
             sql = build_sql(physical_plan)
         except Exception as e:
@@ -244,14 +216,12 @@ class NL2SQLEngine:
                 warnings=[f"SQL generation failed: {e}"],
             )
 
-        # 6. Pre-execution guardrails
-        guard = check_sql(sql)
-        warnings = list(guard["warnings"])
-
+        # No raw-SQL checking here anymore.
+        # Final SQL policy is enforced only in app/db/sql_guard.py before execution.
         return TranslationResult(
             sql=sql,
             plan=plan,
             physical_plan=physical_plan,
-            valid=guard["ok"],
-            warnings=warnings,
+            valid=True,
+            warnings=[],
         )
