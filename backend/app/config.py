@@ -11,7 +11,7 @@ ENV_PATH = BASE_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
 class Settings(BaseModel):
-    DUCKDB_PATH: str = str(BASE_DIR / "data" / "nccs_cap26.db")
+    DUCKDB_PATH: str = str(BASE_DIR / "data" / "nl2sql_runtime.db") #system database created from parquet files
     PARQUET_DIR: str = str(BASE_DIR / "data" / "parquet")
     SEMANTIC_LAYER_DIR: str = str(BASE_DIR / "nl2sql" / "semantic")
     MAX_ROWS_DEFAULT: int = 5000
