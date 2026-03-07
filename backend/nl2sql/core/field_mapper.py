@@ -14,12 +14,16 @@ class FieldMapper:
             data = json.load(f)
         return cls(mapping=data)
 
-    def resolve(self, name: str, cdm: Optional[CdmDictionary] = None) -> str: #resolve name to canonical field
+    def resolve(self, name: str, cdm: Optional[CdmDictionary] = None) -> str: 
+        # resolve a field name or synonym to its canonical column name 
+        # falls back to retuning the orignal name if no mapping found but cdm is always passed as None in engine.py
         key = _norm(name)
         if key in self.mapping:
             return self.mapping[key]
 
-        if cdm and key in cdm.data_element_to_fields:
+        # cdm fallback (optional, pass None to skip)
+        if cdm and hasattr(cdm, "data_element_to_fields"):
+            if key in cdm.data_element_to_fields:
             fields = sorted(cdm.data_element_to_fields[key])
             if len(fields) == 1:
                 return fields[0]
