@@ -24,8 +24,8 @@ class FieldMapper:
         # cdm fallback (optional, pass None to skip)
         if cdm and hasattr(cdm, "data_element_to_fields"):
             if key in cdm.data_element_to_fields:
-            fields = sorted(cdm.data_element_to_fields[key])
-            if len(fields) == 1:
-                return fields[0]
+                fields = sorted(cdm.data_element_to_fields[key])
+                if len(fields) == 1:
+                    return fields[0]
 
         return name
