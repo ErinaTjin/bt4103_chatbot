@@ -6,6 +6,7 @@
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.duckdb_manager import duckdb_manager
 from app.db.view_registry import register_views
@@ -43,6 +44,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Allow requests from the Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health")
 def health():
