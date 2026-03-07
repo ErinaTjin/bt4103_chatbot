@@ -1,3 +1,4 @@
+#converts query plan into SQL
 from __future__ import annotations
 
 from .models import QueryPlan
@@ -5,7 +6,7 @@ from .models import QueryPlan
 
 VIEW_NAME = "anchor_view"
 
-
+#converts metric name into SQL
 def _metric_sql(metric: str, metrics: dict | None = None) -> str:
     if metrics and metric in metrics and metrics[metric].get("sql"):
         return f"{metrics[metric]['sql']} AS {metric}"
@@ -14,7 +15,7 @@ def _metric_sql(metric: str, metrics: dict | None = None) -> str:
     # Fallback: treat metric as raw safe aggregate name
     return f"{metric}"
 
-
+#builds the SQL WHERE clause
 def _filters_sql(filters) -> str:
     if not filters:
         return ""
@@ -27,7 +28,7 @@ def _filters_sql(filters) -> str:
             clauses.append(f"{f.field} {f.op} '{value}'")
     return " WHERE " + " AND ".join(clauses)
 
-
+#choose SQL template based on intent
 def build_sql(plan: QueryPlan, metrics: dict | None = None) -> str:
     metric_sql = _metric_sql(plan.metric, metrics)
     filters_sql = _filters_sql(plan.filters)

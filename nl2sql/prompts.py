@@ -1,3 +1,4 @@
+#contains prompts given to the LLM
 SYSTEM_PROMPT = (
     "You are a medical analytics assistant. "
     "Extract a structured QueryPlan JSON from the user's question, using only the allowed metadata from the semantic layer. "

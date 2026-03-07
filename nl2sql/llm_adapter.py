@@ -3,7 +3,7 @@ import requests
 
 
 class LLMAdapter:
-    def __init__(
+    def __init__( #set parameters
         self,
         model: str = "qwen2.5-coder:14b",
         base_url: str = "http://localhost:11434",
@@ -19,6 +19,7 @@ class LLMAdapter:
         self.num_predict = num_predict
         self.timeout = timeout
 
+    #part that actually queries the LLM
     def generate(self, prompt: str, system: str | None = None) -> str:
         payload = {
             "model": self.model,

@@ -12,12 +12,12 @@ from nl2sql.engine import NL2SQLEngine
 
 
 def main() -> None:
-    semantic_dir = os.path.join(ROOT, "backend", "semantic_layer")
+    semantic_dir = os.path.join(ROOT, "backend", "semantic_layer") #points to where semantic layer files are expected
     sl = None
     if os.path.isdir(semantic_dir):
         sl = SemanticLayerLoader(semantic_dir).load()
 
-    engine = NL2SQLEngine(semantic_api=sl)
+    engine = NL2SQLEngine(semantic_api=sl) #creates engine
 
     print("NCCS NL→SQL MVP Demo (type 'exit' to quit)")
     if engine.allowed_fields:
@@ -32,7 +32,7 @@ def main() -> None:
         if not question:
             continue
 
-        result = engine.translate(question)
+        result = engine.translate(question) #natural language goes in, structured plan and SQL comes out
 
         print("\nQueryPlan JSON:")
         print(json.dumps(result.plan.model_dump(), indent=2))

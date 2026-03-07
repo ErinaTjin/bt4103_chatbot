@@ -8,7 +8,7 @@ from .field_mapper import FieldMapper
 from .sql_builder import build_sql
 from .guardrails import check_sql
 
-
+#container for the final result,
 class TranslationResult:
     def __init__(self, sql: str, plan: QueryPlan, valid: bool, warnings: List[str]):
         self.sql = sql
@@ -40,6 +40,7 @@ class NL2SQLEngine:
         self.value_synonyms = self._init_value_synonyms()
         self.metrics = self._init_metrics()
 
+    #mapping terminology via semantic layer
     def _init_mapper(self) -> FieldMapper:
         mapping = {}
         if self.semantic_api and hasattr(self.semantic_api, "terminology_fields"):
@@ -48,21 +49,25 @@ class NL2SQLEngine:
                     mapping[s] = canonical
         return FieldMapper(mapping)
 
+    #get list of allowed columns
     def _init_allowed_fields(self) -> set:
         if self.semantic_api and hasattr(self.semantic_api, "tables") and "anchor_view" in self.semantic_api.tables:
             return {c.name for c in self.semantic_api.tables["anchor_view"].columns}
         return set()
 
+    #list possible synonym mappings for values
     def _init_value_synonyms(self) -> Dict[str, List[str]]:
         if self.semantic_api and hasattr(self.semantic_api, "terminology_values"):
             return self.semantic_api.terminology_values
         return {}
 
+    #load metrics definition from semantic layer
     def _init_metrics(self) -> Dict[str, dict]:
         if self.semantic_api and hasattr(self.semantic_api, "metrics"):
             return self.semantic_api.metrics
         return {}
 
+    #converts semantic layer metadata into text description to be given to LLM
     def _build_schema_context(self) -> str:
         """Serializes the loaded semantic layer tables into a readable string for the LLM."""
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
@@ -77,7 +82,7 @@ class NL2SQLEngine:
         
         return "\n".join(lines)
 
-
+    #the full pipeline
     def translate(self, user_query: str, active_filters: Dict[str, Any] = None) -> TranslationResult:
         """
         Translates a natural language query into safe, ready-to-execute SQL.

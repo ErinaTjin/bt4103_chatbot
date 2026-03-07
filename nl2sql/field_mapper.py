@@ -9,12 +9,12 @@ class FieldMapper:
         self.mapping = { _norm(k): v for k, v in mapping.items() }
 
     @classmethod
-    def from_file(cls, path: str) -> "FieldMapper":
+    def from_file(cls, path: str) -> "FieldMapper": #load mnappings from JSON file
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return cls(mapping=data)
 
-    def resolve(self, name: str, cdm: Optional[CdmDictionary] = None) -> str:
+    def resolve(self, name: str, cdm: Optional[CdmDictionary] = None) -> str: #resolve name to canonical field
         key = _norm(name)
         if key in self.mapping:
             return self.mapping[key]

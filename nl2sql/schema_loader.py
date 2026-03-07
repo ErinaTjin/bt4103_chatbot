@@ -1,8 +1,9 @@
+#loads CDM dictionary from CSV
 import csv
 from dataclasses import dataclass
 from typing import Dict, Set
 
-
+#normalize text by: lowercasing, trimmming, removing non-alphanumeric characters
 def _norm(text: str) -> str:
     return "".join(ch for ch in text.lower().strip() if ch.isalnum())
 

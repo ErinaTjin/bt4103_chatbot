@@ -1,5 +1,5 @@
+#checks generated SQL
 import re
-
 
 BANNED_KEYWORDS = [
     "INSERT",

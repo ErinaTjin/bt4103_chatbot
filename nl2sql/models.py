@@ -1,3 +1,4 @@
+#defines the structured data types using Pydantic
 from __future__ import annotations
 
 from enum import Enum
@@ -5,7 +6,7 @@ from typing import List, Optional, Union, Any
 
 from pydantic import BaseModel, Field, validator
 
-
+#supported query types
 class Intent(str, Enum):
     count = "count"
     distribution = "distribution"
