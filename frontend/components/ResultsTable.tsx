@@ -27,6 +27,9 @@ export function ResultsTable({ data }: ResultsTableProps) {
       cell: ({ getValue }) => {
         const value = getValue();
         if (typeof value === "number") {
+            if (key.includes("percentage")) {
+            return `${value.toLocaleString()}%`;
+          }
           return value.toLocaleString();
         }
         return value;
