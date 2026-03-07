@@ -1,3 +1,5 @@
+#extractor.py
+# handles extraction of natural language question into structured query plan
 import json
 import re
 
@@ -12,6 +14,7 @@ class QueryExtractor:
     def __init__(self, llm: LLMAdapter | None = None) -> None:
         self.llm = llm or LLMAdapter()
 
+    #fills prompt template with user question, schema context, constraints
     def _build_prompt(self, question: str, schema_context: str, constraints: str) -> str:
         return USER_PROMPT_TEMPLATE.format(
             question=question.strip(),
@@ -21,9 +24,9 @@ class QueryExtractor:
 
     def extract(self, question: str, schema_context: str = "", constraints: str = "") -> QueryPlan:
         prompt = self._build_prompt(question, schema_context, constraints)
-        raw = self.llm.generate(prompt=prompt, system=SYSTEM_PROMPT)
+        raw = self.llm.generate(prompt=prompt, system=SYSTEM_PROMPT) #calls LLM to produce text
         try:
-            return QueryPlan.model_validate_json(self._clean_json(raw))
+            return QueryPlan.model_validate_json(self._clean_json(raw)) #extract JSON text from LLM output and validate against Pydantic QueryPlan schema
         except (ValidationError, json.JSONDecodeError):
             # Retry once with a strict reminder
             retry_prompt = (
