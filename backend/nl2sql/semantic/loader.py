@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
 
 
 @dataclass
@@ -23,8 +23,8 @@ class SemanticLayer:
     tables: Dict[str, Table]
     terminology_fields: Dict[str, List[str]]
     terminology_values: Dict[str, List[str]]
-    metrics: Dict[str, Dict[str, str]]
-    joins: List[dict] 
+    metrics: Dict[str, Dict[str, Any]]
+    joins: List[dict]
 
 
 class SemanticLayerLoader:
@@ -46,6 +46,7 @@ class SemanticLayerLoader:
                 )
                 for c in t.get("columns", [])
             ]
+
             tables[table_name] = Table(
                 name=table_name,
                 description=t.get("description", ""),
@@ -57,7 +58,7 @@ class SemanticLayerLoader:
             terminology_fields=terminology.get("fields", {}),
             terminology_values=terminology.get("values", {}),
             metrics=metrics,
-            joins=schema.get("joins", [])
+            joins=schema.get("joins", []),
         )
 
     def _load_json(self, filename: str) -> dict:

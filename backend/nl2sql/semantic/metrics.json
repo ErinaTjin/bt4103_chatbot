@@ -1,18 +1,12 @@
 {
-  "metrics": [
-    {
-      "name": "count_patients",
-      "description": "Number of patients",
-      "table": "person",
-      "expression": "person_id",
-      "aggregation": "count"
-    }, 
-    {
-      "name": "avg_age",
-      "description": "Average age of patients",
-      "table": "person",
-      "expression": "YEAR(CURRENT_DATE) - year_of_birth",
-      "aggregation": "avg"
-    }
-  ]
+  "count_patients": {
+    "description": "Number of patients",
+    "sql": "COUNT(DISTINCT person.person_id)",
+    "tables": ["person"]
+  },
+  "avg_age": {
+    "description": "Average age of patients",
+    "sql": "AVG(YEAR(CURRENT_DATE) - person.year_of_birth)",
+    "tables": ["person"]
+  }
 }
