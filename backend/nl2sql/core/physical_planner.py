@@ -63,16 +63,26 @@ class PhysicalPlanner:
             limit=plan.limit or 50,
         )
 
+    def _resolve_dimension_expr(self, table: str, column: str) -> str:
+        """
+        Special handling for computed dimensions.
+        year_of_birth is rendered as an age expression.
+        """
+        if column == "year_of_birth":
+            return f"(YEAR(CURRENT_DATE) - {table}.year_of_birth) AS age"
+        return f"{table}.{column}"
+    
     def _resolve_metric(self, metric: str, metrics: dict | None) -> tuple[str, set[str]]:
         if metrics and metric in metrics:
             metric_def = metrics[metric]
             sql = metric_def.get("sql", "")
             used_tables = set(metric_def.get("tables", []))
             if sql:
-                return f"{sql} AS {metric}", used_tables
+                # Wrap in subexpression to safely alias window functions
+               return f"({sql}) AS {metric}", used_tables
 
         # default metric
-        return "COUNT(*) AS count_patients", set()
+        return "COUNT(DISTINCT person.person_id) AS count_patients", set()
 
     def _render_filter(self, expr: str, op: str, value) -> str:
         op_lower = op.lower()
@@ -84,6 +94,19 @@ class PhysicalPlanner:
                 # if LLM returned "a,b,c" as string, leave room for quick fallback
                 vals = str(value)
             return f"{expr} IN ({vals})"
+
+        if op_lower == "like":
+            return f"{expr} LIKE {self._quote(value)}"
+        
+        if op_lower == "not like":
+            return f"{expr} NOT LIKE {self._quote(value)}"
+
+        if op_lower == "or_like":
+            # Renders as: (expr LIKE '%val1%' OR expr LIKE '%val2%')
+            if isinstance(value, list):
+                parts = " OR ".join(f"{expr} LIKE {self._quote(v)}" for v in value)
+                return f"({parts})"
+            return f"{expr} LIKE {self._quote(value)}"
 
         return f"{expr} {op} {self._quote(value)}"
 
@@ -100,7 +123,8 @@ class PhysicalPlanner:
         return sorted(needed_tables)[0]
 
     def _build_order_by(self, plan: QueryPlan, dimensions_sql: list[str], metric_sql: str) -> list[str]:
-        metric_alias = metric_sql.split(" AS ")[-1]
+        # Extract alias — always the last word after AS
+        metric_alias = metric_sql.strip().split(" AS ")[-1].strip()
 
         if plan.sort:
             order_by = []
