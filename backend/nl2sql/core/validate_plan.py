@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Set
 from .models import QueryPlan
 
 
-ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like"}
+ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like", "or_like"}
 ALLOWED_SORT_DIRECTIONS = {"asc", "desc"}
 
 
