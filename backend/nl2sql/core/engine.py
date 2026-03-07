@@ -12,7 +12,7 @@ from backend.nl2sql.core.plan_utils import (
     normalize_plan_fields,
     normalize_filter_values,
 )
-from backend.nl2sql.core.guardrails import validate_query_plan
+from backend.nl2sql.core.validate_plan import validate_query_plan
 from .field_mapper import FieldMapper
 from .physical_planner import PhysicalPlanner
 from .sql_builder import build_sql
