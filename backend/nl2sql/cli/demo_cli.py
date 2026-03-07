@@ -3,17 +3,17 @@ import os
 import sys
 from pathlib import Path
 
-# Allow running this file directly: `python nl2sql/demo_cli.py`
-ROOT = Path(__file__).resolve().parents[1]
+# Allow running this file directly: `python backend/nl2sql/cli/demo_cli.py`
+ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from nl2sql.semantic.loader import SemanticLayerLoader
-from nl2sql.core.engine import NL2SQLEngine
+from backend.nl2sql.semantic.loader import SemanticLayerLoader
+from backend.nl2sql.core.engine import NL2SQLEngine
 
 
 def main() -> None:
-    semantic_dir = os.path.join(ROOT, "backend", "semantic_layer") #points to where semantic layer files are expected
+    semantic_dir = os.path.join(ROOT, "backend", "nl2sql", "semantic_layer") #points to where semantic layer files are expected
     sl = None
     if os.path.isdir(semantic_dir):
         sl = SemanticLayerLoader(semantic_dir).load()
