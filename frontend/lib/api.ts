@@ -1,27 +1,36 @@
 import { QueryResponse } from './types';
-import * as mocks from './mockData';
+
+const BACKEND_URL = 'http://localhost:8000';
 
 // API wrapper for backend communication
-// Logic-based mock mode for demonstration
 export async function queryBackend(message: string): Promise<QueryResponse> {
-  console.log('User query (Logic Mock):', message);
-  const query = message.toLowerCase();
+  console.log('[API] Sending query:', message);
+  
+  const response = await fetch(`${BACKEND_URL}/nl2sql/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: message }),
+  });
 
-  let response = mocks.mockTableResponse;
-
-  if (query.includes('pie')) {
-    response = mocks.mockPieResponse;
-  } else if (query.includes('bar')) {
-    response = mocks.mockBarResponse;
-  } else if (query.includes('line') || query.includes('trend')) {
-    response = mocks.mockLineResponse;
-  } else if (query.includes('stage') || query.includes('distribution')) {
-    response = mocks.mockPieResponse; // default distribution to pie
+  if (!response.ok) {
+    console.error('[API] Backend error:', response.status, response.statusText);
+    throw new Error(`Backend error: ${response.status}`);
   }
 
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(response);
-    }, 1500); // Simulate network delay
-  });
+  const raw = await response.json();
+
+  // Reshape backend response to match frontend QueryResponse type
+  return {
+    data: raw.data?.rows ?? [],
+    sql: raw.sql ?? '',
+    query_plan: raw.plan ?? {},
+    guardrails: {
+      ok: raw.warnings?.length === 0,
+      warnings: raw.warnings ?? [],
+    },
+    warnings: raw.warnings ?? [],
+    error: raw.executed === false && raw.warnings?.length > 0
+      ? raw.warnings.join(', ')
+      : undefined,
+  };
 }
