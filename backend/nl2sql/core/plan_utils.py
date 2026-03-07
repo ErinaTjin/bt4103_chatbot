@@ -22,9 +22,9 @@ def normalize_plan_fields(
     cdm: Optional[CdmDictionary] = None,
 ) -> QueryPlan:
     # remove table prefixes first, then resolve through mapper
-    plan.dimensions = [mapper.resolve(d, cdm) for d in plan.dimensions]
+    plan.dimensions = [mapper.resolve(_remove_table_prefix(d), cdm) for d in plan.dimensions]
     for f in plan.filters:
-        f.field = mapper.resolve(f.field, cdm)
+        f.field = mapper.resolve(_remove_table_prefix(f.field), cdm)
     return plan
 
 
