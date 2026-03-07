@@ -1,11 +1,12 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 # Allow running this file directly: `python nl2sql/demo_cli.py`
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from backend.semantic_layer.loader import SemanticLayerLoader
 from nl2sql.engine import NL2SQLEngine

@@ -10,71 +10,111 @@ from fastapi import FastAPI, HTTPException
 from app.db.duckdb_manager import duckdb_manager
 from app.db.view_registry import register_views
 from app.db.query_executor import execute_sql
-from app.models.api import SQLRequest, SQLResponse
+from app.models.api import (
+    SQLRequest,
+    SQLResponse,
+    NL2SQLRequest,
+    NL2SQLResponse,
+)
+from app.services.nl2sql_service import nl2sql_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    FastAPI lifespan hook (replacement for @app.on_event).
-    Code BEFORE `yield` runs once at startup.
-    Code AFTER `yield` runs once at shutdown.
+    Startup:
+    - connect DuckDB
+    - register views
+    - initialize NL2SQL engine
+    Shutdown:
+    - close DuckDB
     """
-    # ---- STARTUP ----
-    con = duckdb_manager.connect()   # opens/creates persistent DuckDB file: data/anchor.duckdb
-    register_views(con)              # creates views pointing to parquet files
+    con = duckdb_manager.connect()
+    register_views(con)
+    nl2sql_service.initialize()
 
     yield
 
-    # ---- SHUTDOWN ----
-    duckdb_manager.close()           # closes the DuckDB connection cleanly
+    duckdb_manager.close()
 
 
 app = FastAPI(
-    title="ANCHOR DuckDB Execution Service",
+    title="ANCHOR NL2SQL + DuckDB Service",
     lifespan=lifespan
 )
 
 
-@app.get("/health") #when client sends HTTP GET request to /health, run this function, return JSON
+@app.get("/health")
 def health():
-    """
-    Simple health check to confirm:
-    - API is running
-    - DuckDB connection works
-    """
     try:
         con = duckdb_manager.con
         if con is None:
             raise RuntimeError("DuckDB connection not initialized.")
         con.execute("SELECT 1;").fetchone()
-        return {"status": "ok"}
+
+        engine_ready = nl2sql_service.engine is not None
+
+        return {
+            "status": "ok",
+            "duckdb": "connected",
+            "nl2sql_engine": "ready" if engine_ready else "not_ready",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/sql/execute", response_model=SQLResponse) #when client sends post request to execute SQL, uses request/response model to check
-def sql_execute(req: SQLRequest):
-    """
-    Executes a read-only SQL query (SELECT/WITH only) against DuckDB,
-    applies row limits, and returns results in structured JSON.
-
-    Request body:
-      {
-        "sql": "SELECT ...",
-        "row_limit": 1000   # optional
-      }
-    """
+@app.post("/sql/execute", response_model=SQLResponse)
+def sql_execute(req: SQLRequest): #direct SQL execution when you already have SQL
     try:
-        con = duckdb_manager.con #reuse same connection 
+        con = duckdb_manager.con
         if con is None:
             raise RuntimeError("DuckDB connection not initialized.")
         return execute_sql(con, req.sql, req.row_limit)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DuckDB error: {e}")
+
+
+@app.post("/nl2sql/translate")
+def nl2sql_translate(req: NL2SQLRequest):
+    """
+    Translate natural language to QueryPlan + SQL only.
+    """
+    try:
+        result = nl2sql_service.translate(
+            question=req.question,
+            active_filters=req.active_filters,
+        )
+
+        return {
+            "question": req.question,
+            "sql": result.sql,
+            "plan": result.plan.model_dump(),
+            "warnings": result.warnings,
+            "executed": False,
+            "data": None,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"NL2SQL translation error: {e}")
+
+
+@app.post("/nl2sql/execute", response_model=NL2SQLResponse)
+def nl2sql_execute(req: NL2SQLRequest):
+    """
+    End-to-end:
+    NL question -> SQL -> DuckDB execution -> structured response
+    """
+    try:
+        return nl2sql_service.translate_and_execute(
+            question=req.question,
+            active_filters=req.active_filters,
+            row_limit=req.row_limit,
+        )
 
     except ValueError as ve:
-        # Raised by sql_guard (unsafe SQL / disallowed keywords / multiple statements)
         raise HTTPException(status_code=400, detail=str(ve))
 
     except Exception as e:
-        # DuckDB runtime errors, parsing errors, etc.
-        raise HTTPException(status_code=500, detail=f"DuckDB error: {e}")
+        raise HTTPException(status_code=500, detail=f"NL2SQL execution error: {e}")
