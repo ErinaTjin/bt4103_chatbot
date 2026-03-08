@@ -1,5 +1,5 @@
 #engine.py
-#main NL2SQL engine that orchestrates the full pipeline from natural language to SQL, 
+#main NL2SQL engine that orchestrates the full pipeline from natural language to SQL,
 # including semantic mapping, logical->physical planning, and guardrails.
 from __future__ import annotations
 
@@ -162,12 +162,16 @@ class NL2SQLEngine:
             "Limits should never exceed 1000. "
             "Do not output SQL."
         )
+        agent1_constraints_str = (
+            "Use business semantics only. "
+            "Do not map to physical schema names."
+        )
 
         # 1. Extract plan
         plan = self.extractor.extract(
             question=user_query,
-            schema_context=schema_context_str,
-            constraints=constraints_str,
+            schema_context="",
+            constraints=agent1_constraints_str,
         )
         plan_agent1 = plan.model_copy(deep=True)
 
