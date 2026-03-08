@@ -100,6 +100,8 @@ def nl2sql_translate(req: NL2SQLRequest):
             "question": req.question,
             "sql": result.sql,
             "plan": result.plan.model_dump(),
+            "plan_agent1": result.plan_agent1.model_dump() if result.plan_agent1 else None,
+            "plan_agent2": result.plan_agent2.model_dump() if result.plan_agent2 else None,
             "warnings": result.warnings,
             "executed": False,
             "data": None,
