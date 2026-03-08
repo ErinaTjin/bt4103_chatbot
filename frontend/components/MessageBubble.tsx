@@ -1,3 +1,4 @@
+"use client";
 import { Message } from "@/lib/types";
 import { ResultsTable } from "./ResultsTable";
 import { ResultsChart } from "./ResultsChart";
@@ -29,11 +30,10 @@ export function MessageBubble({ message, isUser = false }: MessageBubbleProps) {
       className={`flex w-full ${isUser ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-2 duration-300`}
     >
       <div
-        className={`max-w-[85%] ${
-          isUser
+        className={`max-w-[85%] ${isUser
             ? "bg-blue-600 text-white shadow-lg shadow-blue-200/50"
             : "bg-white border border-gray-100 shadow-sm"
-        } rounded-2xl p-5`}
+          } rounded-2xl p-5`}
       >
         <p
           className={`text-sm leading-relaxed ${isUser ? "text-white" : "text-gray-800 font-medium"}`}
@@ -60,11 +60,10 @@ export function MessageBubble({ message, isUser = false }: MessageBubbleProps) {
             <div className="pt-2 border-t border-gray-100">
               <button
                 onClick={() => setShowSql(!showSql)}
-                className={`flex items-center text-[10px] uppercase tracking-widest font-bold transition-colors ${
-                  isUser
+                className={`flex items-center text-[10px] uppercase tracking-widest font-bold transition-colors ${isUser
                     ? "text-blue-100 hover:text-white"
                     : "text-gray-400 hover:text-blue-600"
-                }`}
+                  }`}
               >
                 {showSql ? (
                   <ChevronUp className="w-3 h-3 mr-1" />

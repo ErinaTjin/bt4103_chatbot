@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from backend.nl2sql.semantic.loader import SemanticLayerLoader
-from backend.nl2sql.core.engine import NL2SQLEngine
+from nl2sql.semantic.loader import SemanticLayerLoader
+from nl2sql.core.engine import NL2SQLEngine
 
 semantic = SemanticLayerLoader(Path("backend/nl2sql/semantic")).load()
 engine = NL2SQLEngine(semantic_api=semantic)

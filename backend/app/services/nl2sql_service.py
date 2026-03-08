@@ -3,9 +3,8 @@
 import os
 from pathlib import Path
 from app.config import settings
-
-from backend.nl2sql.core.engine import NL2SQLEngine
-from backend.nl2sql.semantic.loader import SemanticLayerLoader
+from nl2sql.core.engine import NL2SQLEngine
+from nl2sql.semantic.loader import SemanticLayerLoader
 from app.db.query_executor import execute_sql
 from app.db.duckdb_manager import duckdb_manager
 

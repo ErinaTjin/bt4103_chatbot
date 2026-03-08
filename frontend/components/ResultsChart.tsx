@@ -1,23 +1,10 @@
 "use client";
 
 import React from "react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-} from "recharts";
+import { VegaEmbed } from "react-vega";
 import { DataRow } from "@/lib/types";
 
+// Standardizing colors to match the previous Recharts palette where possible
 const COLORS = [
   "#0088FE",
   "#00C49F",
@@ -41,108 +28,108 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
   const dimensionKey = keys[0];
   const metricKeys = keys.slice(1);
 
+  // Vega-Lite requires a slightly different data format if there are multiple metrics 
+  // to be displayed on the same chart (i.e. 'wide' to 'long' format folding).
+  // However, assuming standard single-metric output for NL2SQL for simplicity, 
+  // or relying on primary metric if there are multiple.
+  const primaryMetric = metricKeys[0];
+
   const renderChart = () => {
+    let spec: any = {
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      data: { values: data },
+      width: "container",
+      height: "container",
+      autosize: { type: "fit", contains: "padding" },
+      background: "transparent",
+      config: {
+        view: { stroke: "transparent" }, // Removes default border
+        axis: {
+          grid: false,           // matches false cartesian grid
+          domain: false,         // equivalent to axisLine={false}
+          ticks: false,          // equivalent to tickLine={false}
+          labelPadding: 10,      // roughly equivalent to dy={10}
+        },
+        legend: {
+          orient: "bottom",
+          title: null,
+        }
+      }
+    };
+
     switch (type) {
       case "pie":
-        return (
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) =>
-                `${name}: ${((percent || 0) * 100).toFixed(0)}%`
-              }
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey={metricKeys[0]}
-              nameKey={dimensionKey}
-            >
-              {data.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={COLORS[index % COLORS.length]}
-                />
-              ))}
-            </Pie>
-            <Tooltip />
-            <Legend />
-          </PieChart>
-        );
+        spec = {
+          ...spec,
+          mark: { type: "arc", innerRadius: 0, outerRadius: 80, tooltip: true },
+          encoding: {
+            theta: { field: primaryMetric, type: "quantitative" },
+            color: {
+              field: dimensionKey,
+              type: "nominal",
+              scale: { range: COLORS }
+            },
+            tooltip: [
+              { field: dimensionKey, type: "nominal" },
+              { field: primaryMetric, type: "quantitative" }
+            ]
+          }
+        };
+        break;
 
       case "line":
-        return (
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey={dimensionKey}
-              axisLine={false}
-              tickLine={false}
-              dy={10}
-            />
-            <YAxis axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={{
-                borderRadius: "8px",
-                border: "none",
-                boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-              }}
-            />
-            <Legend />
-            {metricKeys.map((key, index) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={COLORS[index % COLORS.length]}
-                strokeWidth={2}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-            ))}
-          </LineChart>
-        );
+        spec = {
+          ...spec,
+          config: {
+            ...spec.config,
+            axisY: { grid: true, gridDash: [3, 3] } // Y grid only
+          },
+          mark: { type: "line", point: true, tooltip: true, strokeWidth: 2 },
+          encoding: {
+            x: { field: dimensionKey, type: "nominal", title: null },
+            y: { field: primaryMetric, type: "quantitative", title: null },
+            color: { value: COLORS[0] }, // Simplify to single color for single metric line
+            tooltip: [
+              { field: dimensionKey, type: "nominal" },
+              { field: primaryMetric, type: "quantitative" }
+            ]
+          }
+        };
+        break;
 
       case "bar":
       default:
-        return (
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey={dimensionKey}
-              axisLine={false}
-              tickLine={false}
-              dy={10}
-            />
-            <YAxis axisLine={false} tickLine={false} />
-            <Tooltip
-              cursor={{ fill: "rgba(0,0,0,0.05)" }}
-              contentStyle={{
-                borderRadius: "8px",
-                border: "none",
-                boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-              }}
-            />
-            <Legend />
-            {metricKeys.map((key, index) => (
-              <Bar
-                key={key}
-                dataKey={key}
-                fill={COLORS[index % COLORS.length]}
-                radius={[4, 4, 0, 0]}
-              />
-            ))}
-          </BarChart>
-        );
+        spec = {
+          ...spec,
+          config: {
+            ...spec.config,
+            axisY: { grid: true, gridDash: [3, 3] } // Y grid only
+          },
+          mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
+          encoding: {
+            x: { field: dimensionKey, type: "nominal", title: null, axis: { labelAngle: 0 } },
+            y: { field: primaryMetric, type: "quantitative", title: null },
+            color: {
+              field: dimensionKey,
+              type: "nominal",
+              scale: { range: COLORS },
+              legend: null // Usually bar charts without groups don't need a legend in Vega
+            },
+            tooltip: [
+              { field: dimensionKey, type: "nominal" },
+              { field: primaryMetric, type: "quantitative" }
+            ]
+          }
+        };
+        break;
     }
+
+    return <VegaEmbed spec={spec} options={{ actions: false }} style={{ width: '100%', height: '100%' }} />;
   };
 
   return (
-    <div className="w-full h-64 mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm">
-      <ResponsiveContainer width="100%" height="100%">
-        {renderChart()}
-      </ResponsiveContainer>
+    <div className="w-full h-64 mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm overflow-hidden">
+      {renderChart()}
     </div>
   );
 }

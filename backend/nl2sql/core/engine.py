@@ -5,14 +5,14 @@ from __future__ import annotations
 
 from typing import Dict, Any, List
 
-from backend.nl2sql.core.models import QueryPlan, PhysicalPlan
-from backend.nl2sql.core.llm_adapter import LLMAdapter
-from backend.nl2sql.core.extractor import QueryExtractor
-from backend.nl2sql.core.plan_utils import (
+from nl2sql.core.models import QueryPlan, PhysicalPlan
+from nl2sql.core.llm_adapter import LLMAdapter
+from nl2sql.core.extractor import QueryExtractor
+from nl2sql.core.plan_utils import (
     normalize_plan_fields,
     normalize_filter_values,
 )
-from backend.nl2sql.core.validate_plan import validate_query_plan
+from nl2sql.core.validate_plan import validate_query_plan
 from .field_mapper import FieldMapper
 from .physical_planner import PhysicalPlanner
 from .sql_builder import build_sql

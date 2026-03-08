@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.nl2sql.semantic.loader import SemanticLayerLoader
-from backend.nl2sql.core.engine import NL2SQLEngine
+from nl2sql.semantic.loader import SemanticLayerLoader
+from nl2sql.core.engine import NL2SQLEngine
 
 
 def main() -> None:
