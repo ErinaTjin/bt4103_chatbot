@@ -136,6 +136,17 @@ class NL2SQLEngine:
 
         return plan
 
+    def _normalize_sort_fields(self, plan: QueryPlan) -> QueryPlan:
+        """
+        Keep sort target compatible with validator:
+        sort field must match selected dimension names or metric name.
+        Agent outputs may include qualified names like table.column.
+        """
+        for s in plan.sort:
+            if "." in s.field:
+                s.field = s.field.split(".")[-1]
+        return plan
+
     # the full pipeline
     def translate(
         self,
@@ -192,6 +203,7 @@ class NL2SQLEngine:
         # 4. Semantic normalization
         plan = normalize_plan_fields(plan, self.mapper, None)
         plan = normalize_filter_values(plan, self.value_synonyms)
+        plan = self._normalize_sort_fields(plan)
         plan_agent2 = plan.model_copy(deep=True)
 
         # 5. Structured-plan validation
