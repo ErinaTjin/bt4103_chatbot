@@ -72,7 +72,8 @@ export default function ChatPage() {
           <MessageBubble
             key={message.id}
             message={message}
-            isUser={index % 2 === 0}
+            // debug: treat odd indices as user bubbles so the initial greeting sits on the left
+            isUser={index % 2 !== 0}
           />
         ))}
 
