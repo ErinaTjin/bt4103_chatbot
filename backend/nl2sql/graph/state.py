@@ -29,3 +29,4 @@ class NL2SQLState(TypedDict, total=False):
     clarification_question: Optional[str]
 
     valid: bool
+    result: Any
