@@ -73,6 +73,20 @@ class NL2SQLEngine:
 
         return FieldMapper(mapping)
 
+    def _build_alias_map(self) -> dict[str, str]:
+        """
+        Build deterministic alias -> canonical field map from semantic terminology.
+        """
+        alias_map: dict[str, str] = {}
+        if not self.semantic_api or not hasattr(self.semantic_api, "terminology_fields"):
+            return alias_map
+
+        for canonical, synonyms in self.semantic_api.terminology_fields.items():
+            alias_map[canonical.lower().strip()] = canonical
+            for s in synonyms:
+                alias_map[str(s).lower().strip()] = canonical
+        return alias_map
+
     # get list of allowed columns across ALL semantic tables
     def _init_allowed_fields(self) -> set[str]:
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
@@ -97,6 +111,24 @@ class NL2SQLEngine:
         if self.semantic_api and hasattr(self.semantic_api, "metrics"):
             return self.semantic_api.metrics
         return {}
+
+    def _resolve_field_alias(self, raw: str) -> str:
+        if not raw:
+            return raw
+
+        alias_map = self._build_alias_map()
+        token = raw.strip()
+        key = token.lower()
+        if key in alias_map:
+            return alias_map[key]
+
+        # Handle qualified names like table.column
+        if "." in token:
+            tail = token.split(".")[-1].strip().lower()
+            if tail in alias_map:
+                return alias_map[tail]
+
+        return token
 
     # converts semantic layer metadata into text description to be given to LLM
     def _build_schema_context(self) -> str:
@@ -145,6 +177,17 @@ class NL2SQLEngine:
         for s in plan.sort:
             if "." in s.field:
                 s.field = s.field.split(".")[-1]
+        return plan
+
+    def _canonicalize_fields(self, plan: QueryPlan) -> QueryPlan:
+        """
+        Deterministic alias mapping before validation.
+        """
+        plan.dimensions = [self._resolve_field_alias(d) for d in plan.dimensions]
+        for f in plan.filters:
+            f.field = self._resolve_field_alias(f.field)
+        for s in plan.sort:
+            s.field = self._resolve_field_alias(s.field)
         return plan
 
     # the full pipeline
@@ -208,6 +251,7 @@ class NL2SQLEngine:
         plan = normalize_plan_fields(plan, self.mapper, None)
         plan = normalize_filter_values(plan, self.value_synonyms)
         plan = self._normalize_sort_fields(plan)
+        plan = self._canonicalize_fields(plan)
         plan_agent2 = plan.model_copy(deep=True)
 
         # 5. Structured-plan validation
