@@ -1,6 +1,3 @@
-#nl2sql_service.py
-
-import os
 from pathlib import Path
 from app.config import settings
 from nl2sql.core.engine import NL2SQLEngine
@@ -25,36 +22,50 @@ class NL2SQLService:
 
         self.engine = NL2SQLEngine(semantic_api=semantic_api)
 
-    def translate(self, question: str, active_filters: dict | None = None):
+    def translate(
+        self,
+        question: str,
+        conversation_history: list[dict | str] | None = None,
+        active_filters: dict | None = None,
+    ):
         """
-        Translate a natural language question into a QueryPlan + SQL.
+        Translate a natural language question into Agent1 summary + SQL.
         """
         if self.engine is None:
             raise RuntimeError("NL2SQL engine not initialized.")
-        return self.engine.translate(question, active_filters=active_filters)
+        return self.engine.translate(
+            question,
+            conversation_history=conversation_history,
+            active_filters=active_filters,
+        )
 
     def translate_and_execute(
         self,
         question: str,
+        conversation_history: list[dict | str] | None = None,
         active_filters: dict | None = None,
         row_limit: int | None = None,
     ):
         """
         End-to-end pipeline:
-        question -> plan -> SQL -> execution
+        question -> Agent1 context -> Agent2 SQL -> execution
         """
         if self.engine is None:
             raise RuntimeError("NL2SQL engine not initialized.")
 
-        result = self.engine.translate(question, active_filters=active_filters)
+        result = self.engine.translate(
+            question,
+            conversation_history=conversation_history,
+            active_filters=active_filters,
+        )
 
         if not result.valid:
             return {
                 "question": question,
                 "sql": result.sql,
-                "plan": result.plan.model_dump(),
-                "plan_agent1": result.plan_agent1.model_dump() if result.plan_agent1 else None,
-                "plan_agent2": result.plan_agent2.model_dump() if result.plan_agent2 else None,
+                "plan": result.plan,
+                "plan_agent1": result.plan_agent1,
+                "plan_agent2": result.plan_agent2,
                 "warnings": result.warnings,
                 "executed": False,
                 "data": None,
@@ -69,9 +80,9 @@ class NL2SQLService:
         return {
             "question": question,
             "sql": result.sql,
-            "plan": result.plan.model_dump(),
-            "plan_agent1": result.plan_agent1.model_dump() if result.plan_agent1 else None,
-            "plan_agent2": result.plan_agent2.model_dump() if result.plan_agent2 else None,
+            "plan": result.plan,
+            "plan_agent1": result.plan_agent1,
+            "plan_agent2": result.plan_agent2,
             "warnings": result.warnings,
             "executed": True,
             "data": data,

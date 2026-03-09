@@ -14,8 +14,11 @@ print(result.valid)
 print("\n=== PLAN ===")
 print(result.plan)
 
-print("\n=== PHYSICAL PLAN ===")
-print(result.physical_plan)
+print("\n=== AGENT1 ===")
+print(result.plan_agent1)
+
+print("\n=== AGENT2 ===")
+print(result.plan_agent2)
 
 print("\n=== SQL ===")
 print(result.sql)

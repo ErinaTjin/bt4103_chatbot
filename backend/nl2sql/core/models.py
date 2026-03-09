@@ -1,12 +1,11 @@
-#defines the structured data types using Pydantic
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional, Union, Any
+from typing import Any, List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
-#supported query types
+
 class Intent(str, Enum):
     count = "count"
     distribution = "distribution"
@@ -40,7 +39,7 @@ class QueryPlan(BaseModel):
     sort: List[SortOption] = Field(default_factory=list)
     limit: int = Field(default=50)
     output: Optional[OutputPrefs] = None
-    
+
     needs_clarification: bool = Field(default=False)
     clarification_question: Optional[str] = None
 
@@ -50,10 +49,6 @@ class QueryPlan(BaseModel):
 
 
 class PhysicalPlan(BaseModel):
-    """
-    Represents the mapped plan that is passed to the SQL templates.
-    All fields/tables have been resolved by the Semantic Layer.
-    """
     intent: Intent
     metric_sql: str
     dimensions_sql: List[str]
@@ -63,3 +58,18 @@ class PhysicalPlan(BaseModel):
     group_by: List[str]
     order_by: List[str]
     limit: int
+
+
+class Agent1ContextSummary(BaseModel):
+    intent_summary: str
+    needs_clarification: bool = False
+    clarification_question: Optional[str] = None
+    extracted_filters: List[Filter] = Field(default_factory=list)
+    active_filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class Agent2SQLWriterOutput(BaseModel):
+    sql: str
+    reasoning_summary: Optional[str] = None
+    assumptions: Optional[List[str]] = None
+    warnings: Optional[List[str]] = None
