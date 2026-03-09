@@ -11,64 +11,30 @@ from nl2sql.core.validate_plan import validate_query_plan
 from .state import NL2SQLState
 
 
-def _default_mapping() -> dict:
-    return {
-        "field_aliases": {
-            "cancer_type": "ICD10",
-            "histology": "ICDO3",
-            "stage": "value_as_concept_name",
-            "diagnosis_year": "condition_start_date",
-        },
-        "derived_filters": {
-            "age_group": {
-                "under_50": {
-                    "field": "__expr__",
-                    "op": "raw",
-                    "value": "date_diff('year', person.birth_datetime, condition_occurrence.condition_start_date) < 50",
-                },
-                "50_and_above": {
-                    "field": "__expr__",
-                    "op": "raw",
-                    "value": "date_diff('year', person.birth_datetime, condition_occurrence.condition_start_date) >= 50",
-                },
-            }
-        },
-        "eav_rules": {
-            "stage_measurement_concepts": [
-                "TNM Clin Stage Group",
-                "TNM Path Stage Group",
-            ]
-        },
-    }
-
-
 class GraphNodes:
     def __init__(self, engine: NL2SQLEngine):
         self.engine = engine
         self.mapping = self._load_mapping()
 
     def _load_mapping(self) -> dict:
-        default = _default_mapping()
         path = Path(__file__).resolve().parents[1] / "semantic" / "mapping.json"
         if not path.exists():
-            return default
+            raise FileNotFoundError(f"Required mapping file not found: {path}")
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if isinstance(data, dict):
-                # shallow merge with defaults
-                merged = default.copy()
-                for k, v in data.items():
-                    if isinstance(v, dict) and isinstance(merged.get(k), dict):
-                        inner = merged[k].copy()
-                        inner.update(v)
-                        merged[k] = inner
-                    else:
-                        merged[k] = v
-                return merged
-        except Exception:
-            return default
-        return default
+        except Exception as e:
+            raise RuntimeError(f"Failed to load mapping.json: {e}") from e
+
+        if not isinstance(data, dict):
+            raise ValueError("mapping.json must be a JSON object")
+
+        required_top_keys = {"field_aliases", "derived_filters", "eav_rules", "policy"}
+        missing = sorted(required_top_keys - set(data.keys()))
+        if missing:
+            raise ValueError(f"mapping.json missing required keys: {missing}")
+
+        return data
 
     def context_node(self, state: NL2SQLState) -> NL2SQLState:
         state.setdefault("warnings", [])
@@ -198,27 +164,76 @@ class GraphNodes:
         plan.filters = out_filters
         return plan
 
-    def _ensure_stage_eav_filters(self, plan, warnings: list[str]):
-        stage_dims = {"stage", "value_as_concept_name"}
-        has_stage_dim = any(d in stage_dims for d in plan.dimensions)
-        has_stage_filter = any(f.field == "value_as_concept_name" for f in plan.filters)
-        if not has_stage_dim and not has_stage_filter:
+    def _collect_agent1_requested_fields(self, state: NL2SQLState) -> set[str]:
+        requested: set[str] = set()
+        p1 = state.get("plan_agent1")
+        if not p1:
+            return requested
+        requested.update(str(d) for d in p1.dimensions)
+        requested.update(str(f.field) for f in p1.filters)
+
+        aliases = self.mapping.get("field_aliases", {})
+        canon: set[str] = set()
+        for x in requested:
+            canon.add(x)
+            canon.add(aliases.get(x, x))
+        return canon
+
+    def _apply_policy(self, state: NL2SQLState, plan):
+        warnings = state["warnings"]
+        requested_fields = self._collect_agent1_requested_fields(state)
+
+        # Policy A: forbid inferred filters if not requested by Agent1
+        forbidden_cfg = (
+            self.mapping.get("policy", {})
+            .get("forbidden_inferred_filters", {})
+            .get("if_not_requested_fields", [])
+        )
+        if forbidden_cfg:
+            keep = []
+            for f in plan.filters:
+                if f.field in forbidden_cfg and f.field not in requested_fields:
+                    warnings.append(f"Policy removed inferred filter '{f.field}' not requested by Agent1.")
+                    continue
+                keep.append(f)
+            plan.filters = keep
+
+        # Policy B: required intent constraints
+        required = self.mapping.get("policy", {}).get("required_intent_constraints", {})
+        needs_age = "age_group" in requested_fields or "age" in requested_fields
+        if needs_age and "age_group" in required:
+            must_have_any = set(required["age_group"])
+            has_required = any(f.field in must_have_any for f in plan.filters)
+            if not has_required:
+                # fallback from derived rule
+                derived = self.mapping.get("derived_filters", {}).get("age_group", {}).get("under_50")
+                if derived:
+                    plan.filters.append(
+                        Filter(field=derived["field"], op=derived["op"], value=derived["value"])
+                    )
+                    warnings.append("Policy restored missing age constraint as derived filter.")
+                    state["uncertainty_flag"] = True
+
+        return plan
+
+    def _ensure_eav_requirements(self, plan, warnings: list[str]):
+        eav = self.mapping.get("eav_rules", {})
+        value_field = eav.get("value_field", "value_as_concept_name")
+        concept_field = eav.get("concept_field", "measurement_concept_name")
+
+        has_value_ref = any(d == value_field for d in plan.dimensions) or any(f.field == value_field for f in plan.filters)
+        if not has_value_ref:
             return plan
 
-        has_measurement = any(f.field == "measurement_concept_name" for f in plan.filters)
-        if has_measurement:
+        has_concept_ref = any(f.field == concept_field for f in plan.filters)
+        if has_concept_ref:
             return plan
 
-        concepts = self.mapping.get("eav_rules", {}).get("stage_measurement_concepts", [])
-        if concepts:
-            plan.filters.append(
-                Filter(
-                    field="measurement_concept_name",
-                    op="in",
-                    value=concepts,
-                )
-            )
-            warnings.append("Added EAV anchor filter measurement_concept_name for stage query.")
+        defaults = eav.get("default_stage_concepts", [])
+        if defaults:
+            plan.filters.append(Filter(field=concept_field, op="in", value=defaults))
+            warnings.append(f"EAV policy added required '{concept_field}' filter.")
+
         return plan
 
     def normalize_node(self, state: NL2SQLState) -> NL2SQLState:
@@ -238,14 +253,14 @@ class GraphNodes:
         plan = normalize_filter_values(plan, self.engine.value_synonyms)
         plan = self._expand_diagnosis_year(plan, state["warnings"])
         plan = self._apply_derived_filters(plan, state["warnings"])
-        plan = self._ensure_stage_eav_filters(plan, state["warnings"])
+        plan = self._apply_policy(state, plan)
+        plan = self._ensure_eav_requirements(plan, state["warnings"])
 
         plan = self.engine._canonicalize_fields(plan)
         plan = self.engine._normalize_sort_fields(plan)
         plan, normalize_warnings = self.engine._best_effort_normalize(plan)
         state["warnings"].extend(normalize_warnings)
 
-        # If metric is unknown to template library, downgrade to count metric for safe execution.
         if self.engine.metrics and plan.metric not in self.engine.metrics:
             state["warnings"].append(
                 f"Metric '{plan.metric}' not in metrics template library; fallback to count_patients."
