@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from nl2sql.core.llm_adapter import LLMAdapter
@@ -36,11 +37,32 @@ class NL2SQLEngine:
         self.resolver = Agent2QueryPlanResolver(self.llm)
         self.semantic_api = semantic_api
         self.allowed_tables = self._init_allowed_tables()
+        self.allowed_columns = self._init_allowed_columns()
+        self.eav_tables = self._init_eav_tables()
 
     def _init_allowed_tables(self) -> set[str]:
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
             return set()
         return set(self.semantic_api.tables.keys())
+
+    def _init_allowed_columns(self) -> set[str]:
+        if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
+            return set()
+        cols: set[str] = set()
+        for table in self.semantic_api.tables.values():
+            for c in table.columns:
+                cols.add(c.name)
+        return cols
+
+    def _init_eav_tables(self) -> set[str]:
+        if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
+            return set()
+        eav_like: set[str] = set()
+        for table_name, table in self.semantic_api.tables.items():
+            col_names = {c.name for c in table.columns}
+            if "measurement_concept_name" in col_names and "value_as_concept_name" in col_names:
+                eav_like.add(table_name)
+        return eav_like
 
     def _build_schema_context(self, relevant_only: bool = False, hint: str = "") -> str:
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
@@ -100,6 +122,15 @@ class NL2SQLEngine:
                     nested_parts.append(f"{k}=>{', '.join(vals[:4])}")
                 lines.append(f"- {canonical}: {'; '.join(nested_parts)}")
 
+        if self.eav_tables:
+            lines.append("EAV table semantics:")
+            for table_name in sorted(self.eav_tables):
+                lines.append(
+                    f"- {table_name}: measurement_concept_name is the attribute selector; "
+                    "value_as_concept_name is the measured result. "
+                    "Both are required for precise filtering."
+                )
+
         return "\n".join(lines)
 
     def _build_business_rules(self) -> str:
@@ -107,7 +138,11 @@ class NL2SQLEngine:
             [
                 "- Default to read-only clinical analytics queries.",
                 "- Keep SQL deterministic and executable in DuckDB.",
-                "- For percentage questions, use metric formulas from semantic metrics when possible.",
+                "- Use EAV semantics explicitly when EAV tables are involved.",
+                "- For each requested concept in an EAV table, constrain both the concept column and the value/result column when applicable.",
+                "- Every extracted filter from Agent1 must be reflected in SQL WHERE predicates or equivalent CTE predicates.",
+                "- Use explicit JOIN clauses for every referenced table; never rely on implicit cross joins.",
+                "- For percentage/prevalence/rate questions, define denominator cohort explicitly and separately from numerator where needed.",
                 "- Apply active filters unless explicitly overridden by user question.",
                 "- For trend questions, order by temporal dimension ascending.",
                 "- Prefer COUNT(DISTINCT person.person_id) for patient counts.",
@@ -134,8 +169,14 @@ class NL2SQLEngine:
                 "ORDER BY diagnosis_year ASC",
                 "LIMIT 100;",
                 "",
-                "3) Multi-value filter:",
-                "... WHERE measurement.measurement_concept_name IN ('KRAS Mutation Conclusion', 'BRAF Mutation Conclusion')",
+                "3) EAV-safe filter pattern:",
+                "SELECT m.measurement_concept_name, COUNT(DISTINCT p.person_id) AS patient_count",
+                "FROM \"anchor_view\".\"person\" AS p",
+                "JOIN \"anchor_view\".\"measurement_mutation\" AS m ON p.person_id = m.person_id",
+                "WHERE m.measurement_concept_name IN (<requested_measurement_names>)",
+                "AND m.value_as_concept_name = <requested_result_value>",
+                "GROUP BY m.measurement_concept_name",
+                "LIMIT 100;",
             ]
         )
 
@@ -168,6 +209,92 @@ class NL2SQLEngine:
             if f" {kw} " in f" {candidate} ":
                 return f"Agent2 SQL contains disallowed keyword: {kw}."
         return None
+
+    def _extract_referenced_tables(self, sql: str) -> set[str]:
+        pattern = re.compile(
+            r"""
+            \b(?:from|join)\s+
+            (?:
+                "[^"]+"\."(?P<q_table>[^"]+)"
+                |
+                [A-Za-z_][A-Za-z0-9_]*\.(?P<u_table>[A-Za-z_][A-Za-z0-9_]*)
+                |
+                "(?P<q_table_only>[^"]+)"
+                |
+                (?P<u_table_only>[A-Za-z_][A-Za-z0-9_]*)
+            )
+            """,
+            flags=re.IGNORECASE | re.VERBOSE,
+        )
+        tables: set[str] = set()
+        for match in pattern.finditer(sql):
+            table = (
+                match.group("q_table")
+                or match.group("u_table")
+                or match.group("q_table_only")
+                or match.group("u_table_only")
+            )
+            if table:
+                tables.add(table.lower())
+        return tables
+
+    def _validate_sql_semantics(
+        self,
+        sql: str,
+        user_query: str,
+        extracted_filters: list[dict[str, Any]],
+        active_filters: dict[str, Any] | None,
+    ) -> tuple[list[str], list[str]]:
+        blocking: list[str] = []
+        advisory: list[str] = []
+
+        sql_lower = sql.lower()
+        referenced_tables = self._extract_referenced_tables(sql)
+
+        if len(referenced_tables) > 1 and " join " not in f" {sql_lower} ":
+            blocking.append("SQL references multiple tables without explicit JOIN clauses.")
+
+        # Enforce physical filter coverage for known schema columns.
+        all_filters = list(extracted_filters)
+        for k, v in (active_filters or {}).items():
+            all_filters.append({"field": k, "op": "=", "value": v})
+
+        for flt in all_filters:
+            field = str(flt.get("field", "")).strip()
+            if not field or field not in self.allowed_columns:
+                continue
+            if field.lower() not in sql_lower:
+                blocking.append(f"SQL is missing required filter field: {field}")
+
+        # EAV correctness checks.
+        used_eav_tables = [t for t in referenced_tables if t in {x.lower() for x in self.eav_tables}]
+        if used_eav_tables and "measurement_concept_name" not in sql_lower:
+            blocking.append(
+                "SQL uses EAV measurement table but does not constrain measurement_concept_name."
+            )
+        if used_eav_tables and "value_as_concept_name" not in sql_lower:
+            advisory.append(
+                "SQL uses EAV measurement table without an explicit value_as_concept_name constraint."
+            )
+
+        # Cohort anchoring checks for disease/diagnosis phrasing.
+        query_lower = user_query.lower()
+        asks_disease_cohort = any(
+            token in query_lower for token in ["cancer", "diagnosed", "diagnosis", "icd", "cohort"]
+        )
+        if asks_disease_cohort and "condition_occurrence" in {t.lower() for t in self.allowed_tables}:
+            if "condition_occurrence" not in referenced_tables:
+                blocking.append(
+                    "SQL is missing condition_occurrence cohort anchoring for a diagnosis/disease query."
+                )
+
+        asks_percentage = any(token in query_lower for token in ["percentage", "prevalence", "proportion", "rate"])
+        if asks_percentage and "/" not in sql:
+            advisory.append(
+                "Percentage-style question detected but SQL does not clearly show numerator/denominator division."
+            )
+
+        return blocking, advisory
 
     def translate(
         self,
@@ -220,9 +347,20 @@ class NL2SQLEngine:
         sql = writer_output.sql.strip()
         plan_agent2 = writer_output.model_dump()
 
+        blocking_issues: List[str] = []
+
         safety_error = self._validate_sql_shape(sql)
         if safety_error:
-            warnings.append(safety_error)
+            blocking_issues.append(safety_error)
+
+        semantic_blocking, semantic_advisory = self._validate_sql_semantics(
+            sql=sql,
+            user_query=user_query,
+            extracted_filters=[f.model_dump() for f in agent1.extracted_filters],
+            active_filters=active_filters,
+        )
+        blocking_issues.extend(semantic_blocking)
+        warnings.extend(semantic_advisory)
 
         if writer_output.warnings:
             warnings.extend(writer_output.warnings)
@@ -242,8 +380,8 @@ class NL2SQLEngine:
         return TranslationResult(
             sql=sql,
             plan=plan,
-            valid=len(warnings) == 0,
-            warnings=warnings,
+            valid=len(blocking_issues) == 0,
+            warnings=blocking_issues + warnings,
             plan_agent1=plan_agent1,
             plan_agent2=plan_agent2,
         )

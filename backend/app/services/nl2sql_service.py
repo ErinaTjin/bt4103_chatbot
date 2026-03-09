@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 from app.config import settings
 from nl2sql.core.engine import NL2SQLEngine
+from nl2sql.core.langgraph_pipeline import NL2SQLLangGraph
 from nl2sql.semantic.loader import SemanticLayerLoader
 from app.db.query_executor import execute_sql
 from app.db.duckdb_manager import duckdb_manager
@@ -9,6 +11,7 @@ from app.db.duckdb_manager import duckdb_manager
 class NL2SQLService:
     def __init__(self):
         self.engine = None
+        self.graph = None
 
     def initialize(self):
         """
@@ -21,6 +24,11 @@ class NL2SQLService:
             semantic_api = SemanticLayerLoader(str(semantic_dir)).load()
 
         self.engine = NL2SQLEngine(semantic_api=semantic_api)
+        if os.getenv("USE_LANGGRAPH", "false").lower() in {"1", "true", "yes"}:
+            try:
+                self.graph = NL2SQLLangGraph(self.engine)
+            except Exception:
+                self.graph = None
 
     def translate(
         self,
@@ -33,6 +41,12 @@ class NL2SQLService:
         """
         if self.engine is None:
             raise RuntimeError("NL2SQL engine not initialized.")
+        if self.graph is not None:
+            return self.graph.invoke(
+                question,
+                conversation_history=conversation_history,
+                active_filters=active_filters,
+            )
         return self.engine.translate(
             question,
             conversation_history=conversation_history,

@@ -68,6 +68,13 @@ class Agent1ContextSummary(BaseModel):
     active_filters: dict[str, Any] = Field(default_factory=dict)
 
 
+class ContextResolution(BaseModel):
+    standalone_question: str
+    context_summary: Optional[str] = None
+    needs_clarification: bool = False
+    clarification_question: Optional[str] = None
+
+
 class Agent2SQLWriterOutput(BaseModel):
     sql: str
     reasoning_summary: Optional[str] = None
