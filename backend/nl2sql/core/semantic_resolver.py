@@ -1,18 +1,40 @@
 #semantic_resolver.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 
 @dataclass
 class ResolvedColumn:
     table: str
     column: str
+    sql_expr: Optional[str] = field(default=None)   # set for computed columns
+    alias: Optional[str] = field(default=None)       # SELECT alias for computed columns
 
     @property
     def qualified(self) -> str:
         return f'{self.table}.{self.column}'
+
+
+# Computed columns: concept name → {table, filter_expr, select_expr, alias}
+# filter_expr  — SQL fragment used in WHERE clauses
+# select_expr  — SQL fragment used in SELECT / GROUP BY (may differ, e.g. needs alias)
+# alias        — name used in GROUP BY and ORDER BY after SELECT
+COMPUTED_COLUMNS: dict[str, dict] = {
+    "age": {
+        "table": "person",
+        "filter_expr": "YEAR(CURRENT_DATE) - person.year_of_birth",
+        "select_expr": "(YEAR(CURRENT_DATE) - person.year_of_birth) AS age",
+        "alias": "age",
+    },
+    "diagnosis_year": {
+        "table": "condition_occurrence",
+        "filter_expr": "YEAR(condition_occurrence.condition_start_date)",
+        "select_expr": "YEAR(condition_occurrence.condition_start_date) AS diagnosis_year",
+        "alias": "diagnosis_year",
+    },
+}
 
 
 class SemanticResolver:
@@ -41,10 +63,20 @@ class SemanticResolver:
         return field_to_table
 
     def resolve_column(self, field_name: str) -> ResolvedColumn:
+        # Check computed columns first
+        if field_name in COMPUTED_COLUMNS:
+            c = COMPUTED_COLUMNS[field_name]
+            return ResolvedColumn(
+                table=c["table"],
+                column=field_name,
+                sql_expr=c["filter_expr"],
+                alias=c["alias"],
+            )
+
         table = self.field_to_table.get(field_name)
         if not table:
             raise ValueError(f"Unknown field: {field_name}")
         return ResolvedColumn(table=table, column=field_name)
 
     def all_allowed_fields(self) -> set[str]:
-        return set(self.field_to_table.keys())
+        return set(self.field_to_table.keys()) | set(COMPUTED_COLUMNS.keys())

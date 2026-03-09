@@ -1,6 +1,27 @@
 {
   "diagnosis": "condition_source_value",
   "cancer_type": "condition_source_value",
+  "cancer site": "ICD10",
+  "primary site": "ICD10",
+  "topo": "ICD10",
+  "topology": "ICD10",
+  "histology": "ICDO3",
+  "histo": "ICDO3",
+  "tumor type": "ICDO3",
   "diagnosis_date": "condition_start_date",
-  "year": "condition_start_date"
+  "year": "condition_start_date",
+  "gender": "gender_source_value",
+  "sex": "gender_source_value",
+  "race": "race_source_value",
+  "ethnicity": "race_source_value",
+  "ethnic group": "race_source_value",
+  "death_status": "death_date",
+  "mortality": "death_date",
+  "deceased": "death_date",
+  "drug": "drug_source_value",
+  "medication": "drug_source_value",
+  "drug_class": "ATC",
+  "procedure": "procedure_source_value",
+  "surgery": "procedure_source_value",
+  "treatment": "procedure_source_value"
 }

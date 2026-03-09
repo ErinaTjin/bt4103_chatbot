@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from nl2sql.core.models import QueryPlan, PhysicalPlan
 from nl2sql.core.llm_adapter import LLMAdapter
 from nl2sql.core.agent1_extractor import Agent1QueryPlanExtractor
-from backend.nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
+from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
 from nl2sql.core.plan_utils import (
     normalize_plan_fields,
     normalize_filter_values,

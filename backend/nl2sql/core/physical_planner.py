@@ -31,15 +31,23 @@ class PhysicalPlanner:
         for dim in plan.dimensions:
             resolved = self.resolver.resolve_column(dim)
             needed_tables.add(resolved.table)
-            expr = f'{resolved.table}.{resolved.column}'
-            dimensions_sql.append(expr)
-            group_by.append(expr)
+            if resolved.sql_expr:
+                # computed column: SELECT uses select_expr, GROUP BY uses alias
+                from .semantic_resolver import COMPUTED_COLUMNS
+                select_expr = COMPUTED_COLUMNS[dim]["select_expr"]
+                dimensions_sql.append(select_expr)
+                group_by.append(resolved.alias)
+            else:
+                expr = f'{resolved.table}.{resolved.column}'
+                dimensions_sql.append(expr)
+                group_by.append(expr)
 
         where_clauses: list[str] = []
         for flt in plan.filters:
             resolved = self.resolver.resolve_column(flt.field)
             needed_tables.add(resolved.table)
-            expr = f'{resolved.table}.{resolved.column}'
+            # use sql_expr for computed columns (e.g. YEAR(...)), else bare column ref
+            expr = resolved.sql_expr if resolved.sql_expr else f'{resolved.table}.{resolved.column}'
             where_clauses.append(self._render_filter(expr, flt.op, flt.value))
 
         if not needed_tables:
@@ -63,15 +71,6 @@ class PhysicalPlanner:
             limit=plan.limit or 50,
         )
 
-    def _resolve_dimension_expr(self, table: str, column: str) -> str:
-        """
-        Special handling for computed dimensions.
-        year_of_birth is rendered as an age expression.
-        """
-        if column == "year_of_birth":
-            return f"(YEAR(CURRENT_DATE) - {table}.year_of_birth) AS age"
-        return f"{table}.{column}"
-    
     def _resolve_metric(self, metric: str, metrics: dict | None) -> tuple[str, set[str]]:
         if metrics and metric in metrics:
             metric_def = metrics[metric]
