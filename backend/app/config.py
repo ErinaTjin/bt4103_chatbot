@@ -18,5 +18,6 @@ class Settings(BaseModel):
     MAX_ROWS_HARD: int = 20000
     THREADS: int = 4
     PARQUET_KEY: str = os.getenv("PARQUET_KEY", "")
+    USE_LANGGRAPH: bool = os.getenv("USE_LANGGRAPH", "true").lower() in {"1", "true", "yes", "on"}
 
 settings = Settings()

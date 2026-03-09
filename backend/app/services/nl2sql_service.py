@@ -1,21 +1,23 @@
-#nl2sql_service.py
+# nl2sql_service.py
 
-import os
 from pathlib import Path
+
 from app.config import settings
+from app.db.duckdb_manager import duckdb_manager
+from app.db.query_executor import execute_sql
 from nl2sql.core.engine import NL2SQLEngine
 from nl2sql.semantic.loader import SemanticLayerLoader
-from app.db.query_executor import execute_sql
-from app.db.duckdb_manager import duckdb_manager
 
 
 class NL2SQLService:
     def __init__(self):
-        self.engine = None
+        self.engine: NL2SQLEngine | None = None
+        self.graph_workflow = None
 
     def initialize(self):
         """
         Load semantic layer and initialize NL2SQL engine once at startup.
+        If USE_LANGGRAPH=true and langgraph is installed, use graph workflow as primary path.
         """
         semantic_dir = Path(settings.SEMANTIC_LAYER_DIR)
 
@@ -25,12 +27,29 @@ class NL2SQLService:
 
         self.engine = NL2SQLEngine(semantic_api=semantic_api)
 
+        if settings.USE_LANGGRAPH:
+            try:
+                from nl2sql.graph import NL2SQLGraphWorkflow
+
+                self.graph_workflow = NL2SQLGraphWorkflow(self.engine)
+            except Exception as e:
+                # Keep service available with deterministic fallback path.
+                self.graph_workflow = None
+                print(f"[NL2SQL] LangGraph disabled, fallback to engine pipeline: {e}")
+
     def translate(self, question: str, active_filters: dict | None = None):
         """
         Translate a natural language question into a QueryPlan + SQL.
         """
         if self.engine is None:
             raise RuntimeError("NL2SQL engine not initialized.")
+
+        if self.graph_workflow is not None:
+            return self.graph_workflow.invoke(
+                question=question,
+                active_filters=active_filters,
+            )
+
         return self.engine.translate(question, active_filters=active_filters)
 
     def translate_and_execute(
@@ -46,7 +65,7 @@ class NL2SQLService:
         if self.engine is None:
             raise RuntimeError("NL2SQL engine not initialized.")
 
-        result = self.engine.translate(question, active_filters=active_filters)
+        result = self.translate(question, active_filters=active_filters)
 
         if not result.valid:
             return {
