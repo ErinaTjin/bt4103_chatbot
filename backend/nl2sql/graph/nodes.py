@@ -254,6 +254,19 @@ class GraphNodes:
         plan = self._expand_diagnosis_year(plan, state["warnings"])
         plan = self._apply_derived_filters(plan, state["warnings"])
         plan = self._apply_policy(state, plan)
+
+        # Drop LLM-generated date function strings attached to physical date columns.
+        # Keep only raw expression filters in __expr__ channel.
+        cleaned_filters = []
+        for f in plan.filters:
+            if f.field in {"condition_start_date", "measurement_date", "procedure_date", "drug_exposure_start_date"} and isinstance(f.value, str):
+                v = f.value.lower()
+                if "date_add(" in v or "date_diff(" in v:
+                    state["warnings"].append(f"Dropped non-canonical date expression on field '{f.field}'.")
+                    continue
+            cleaned_filters.append(f)
+        plan.filters = cleaned_filters
+
         plan = self._ensure_eav_requirements(plan, state["warnings"])
 
         plan = self.engine._canonicalize_fields(plan)
