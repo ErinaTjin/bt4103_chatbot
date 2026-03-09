@@ -44,6 +44,18 @@ class PhysicalPlanner:
 
         where_clauses: list[str] = []
         for flt in plan.filters:
+            # raw SQL expression filter (best-effort fallback from engine)
+            if flt.field == "__expr__" and str(flt.op).lower() == "raw":
+                expr_sql = str(flt.value)
+                if "person." in expr_sql:
+                    needed_tables.add("person")
+                if "condition_occurrence." in expr_sql:
+                    needed_tables.add("condition_occurrence")
+                if "measurement_mutation." in expr_sql:
+                    needed_tables.add("measurement_mutation")
+                where_clauses.append(expr_sql)
+                continue
+
             resolved = self.resolver.resolve_column(flt.field)
             needed_tables.add(resolved.table)
             # use sql_expr for computed columns (e.g. YEAR(...)), else bare column ref

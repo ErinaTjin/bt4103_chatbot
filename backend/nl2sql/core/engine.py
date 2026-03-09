@@ -1,25 +1,19 @@
-#engine.py
-#main NL2SQL engine that orchestrates the full pipeline from natural language to SQL,
-# including semantic mapping, logical->physical planning, and guardrails.
 from __future__ import annotations
 
-from typing import Dict, Any, List
+import difflib
+from typing import Any, Dict, List
 
-from nl2sql.core.models import QueryPlan, PhysicalPlan
-from nl2sql.core.llm_adapter import LLMAdapter
-from nl2sql.core.agent1_extractor import Agent1QueryPlanExtractor
-from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
-from nl2sql.core.plan_utils import (
-    normalize_plan_fields,
-    normalize_filter_values,
-)
-from nl2sql.core.validate_plan import validate_query_plan
-from .field_mapper import FieldMapper
+from .agent1_extractor import Agent1QueryPlanExtractor
 from .agent2_planner import PhysicalPlanner
+from .agent2_resolver import Agent2QueryPlanResolver
 from .agent2_sql_generator import build_sql
+from .field_mapper import FieldMapper
+from .llm_adapter import LLMAdapter
+from .models import PhysicalPlan, QueryPlan
+from .plan_utils import normalize_filter_values, normalize_plan_fields
+from .validate_plan import validate_query_plan
 
 
-# container for the final result
 class TranslationResult:
     def __init__(
         self,
@@ -53,41 +47,33 @@ class NL2SQLEngine:
         self.resolver = Agent2QueryPlanResolver(self.llm) if enable_agent2_resolver else None
         self.semantic_api = semantic_api
 
-        # Semantic / metadata setup
         self.mapper = self._init_mapper()
         self.allowed_fields = self._init_allowed_fields()
         self.value_synonyms = self._init_value_synonyms()
         self.metrics = self._init_metrics()
+        self.alias_map = self._build_alias_map()
 
-        # logical -> physical planning layer
         self.planner = PhysicalPlanner(semantic_api=self.semantic_api)
 
-    # mapping terminology via semantic layer
     def _init_mapper(self) -> FieldMapper:
-        mapping: dict[str, str] = {}
-
+        mapping: Dict[str, str] = {}
         if self.semantic_api and hasattr(self.semantic_api, "terminology_fields"):
             for canonical, synonyms in self.semantic_api.terminology_fields.items():
                 for s in [canonical] + list(synonyms):
                     mapping[s] = canonical
-
         return FieldMapper(mapping)
 
-    def _build_alias_map(self) -> dict[str, str]:
-        """
-        Build deterministic alias -> canonical field map from semantic terminology.
-        """
-        alias_map: dict[str, str] = {}
+    def _build_alias_map(self) -> Dict[str, str]:
+        alias_map: Dict[str, str] = {}
         if not self.semantic_api or not hasattr(self.semantic_api, "terminology_fields"):
             return alias_map
 
         for canonical, synonyms in self.semantic_api.terminology_fields.items():
-            alias_map[canonical.lower().strip()] = canonical
+            alias_map[str(canonical).lower().strip()] = canonical
             for s in synonyms:
                 alias_map[str(s).lower().strip()] = canonical
         return alias_map
 
-    # get list of allowed columns across ALL semantic tables
     def _init_allowed_fields(self) -> set[str]:
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
             return set()
@@ -98,15 +84,15 @@ class NL2SQLEngine:
                 if c.name:
                     allowed.add(c.name)
 
+        # computed fields supported by semantic resolver
+        allowed.update({"age", "diagnosis_year"})
         return allowed
 
-    # list possible synonym mappings for values
     def _init_value_synonyms(self) -> Dict[str, List[str]]:
         if self.semantic_api and hasattr(self.semantic_api, "terminology_values"):
             return self.semantic_api.terminology_values
         return {}
 
-    # load metric definitions from semantic layer
     def _init_metrics(self) -> Dict[str, dict]:
         if self.semantic_api and hasattr(self.semantic_api, "metrics"):
             return self.semantic_api.metrics
@@ -116,21 +102,18 @@ class NL2SQLEngine:
         if not raw:
             return raw
 
-        alias_map = self._build_alias_map()
         token = raw.strip()
         key = token.lower()
-        if key in alias_map:
-            return alias_map[key]
+        if key in self.alias_map:
+            return self.alias_map[key]
 
-        # Handle qualified names like table.column
         if "." in token:
             tail = token.split(".")[-1].strip().lower()
-            if tail in alias_map:
-                return alias_map[tail]
+            if tail in self.alias_map:
+                return self.alias_map[tail]
 
         return token
 
-    # converts semantic layer metadata into text description to be given to LLM
     def _build_schema_context(self) -> str:
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
             return "No schema context provided."
@@ -169,20 +152,12 @@ class NL2SQLEngine:
         return plan
 
     def _normalize_sort_fields(self, plan: QueryPlan) -> QueryPlan:
-        """
-        Keep sort target compatible with validator:
-        sort field must match selected dimension names or metric name.
-        Agent outputs may include qualified names like table.column.
-        """
         for s in plan.sort:
             if "." in s.field:
                 s.field = s.field.split(".")[-1]
         return plan
 
     def _canonicalize_fields(self, plan: QueryPlan) -> QueryPlan:
-        """
-        Deterministic alias mapping before validation.
-        """
         plan.dimensions = [self._resolve_field_alias(d) for d in plan.dimensions]
         for f in plan.filters:
             f.field = self._resolve_field_alias(f.field)
@@ -190,27 +165,112 @@ class NL2SQLEngine:
             s.field = self._resolve_field_alias(s.field)
         return plan
 
-    # the full pipeline
+    def _fuzzy_map_field(self, field: str) -> str | None:
+        if not self.allowed_fields:
+            return field
+        if field in self.allowed_fields:
+            return field
+        cands = difflib.get_close_matches(field, list(self.allowed_fields), n=1, cutoff=0.72)
+        return cands[0] if cands else None
+
+    def _best_effort_normalize(self, plan: QueryPlan) -> tuple[QueryPlan, list[str]]:
+        warnings: list[str] = []
+
+        # 1) count intent should return a single aggregate row
+        if str(getattr(plan.intent, "value", plan.intent)) == "count":
+            if plan.dimensions:
+                warnings.append("count intent detected: dropped dimensions for total count.")
+            plan.dimensions = []
+            plan.sort = []
+
+        # 2) map business-level age_group to SQL expression filter
+        mapped_filters = []
+        for flt in plan.filters:
+            field_l = str(flt.field).lower().strip()
+            if field_l == "age_group":
+                val = str(flt.value).lower().strip()
+                if "under" in val and "50" in val:
+                    flt.field = "__expr__"
+                    flt.op = "raw"
+                    flt.value = "date_diff('year', person.birth_datetime, condition_occurrence.condition_start_date) < 50"
+                    warnings.append("Mapped age_group=under_50 to derived age expression.")
+                    mapped_filters.append(flt)
+                    continue
+                if "50" in val and ("above" in val or "over" in val or "+" in val):
+                    flt.field = "__expr__"
+                    flt.op = "raw"
+                    flt.value = "date_diff('year', person.birth_datetime, condition_occurrence.condition_start_date) >= 50"
+                    warnings.append("Mapped age_group=50+ to derived age expression.")
+                    mapped_filters.append(flt)
+                    continue
+                warnings.append(f"Dropped unsupported age_group value: {flt.value}")
+                continue
+            mapped_filters.append(flt)
+        plan.filters = mapped_filters
+
+        # 3) dimensions: map alias/fuzzy or drop
+        fixed_dims: list[str] = []
+        for d in plan.dimensions:
+            alias = self._resolve_field_alias(d)
+            mapped = self._fuzzy_map_field(alias)
+            if mapped:
+                if mapped != d:
+                    warnings.append(f"Mapped dimension '{d}' -> '{mapped}'.")
+                fixed_dims.append(mapped)
+            else:
+                warnings.append(f"Dropped unknown dimension field: {d}")
+        plan.dimensions = fixed_dims
+
+        # 4) filters: map alias/fuzzy or drop (except raw expr)
+        fixed_filters = []
+        for f in plan.filters:
+            if f.field == "__expr__":
+                fixed_filters.append(f)
+                continue
+            alias = self._resolve_field_alias(f.field)
+            mapped = self._fuzzy_map_field(alias)
+            if mapped:
+                if mapped != f.field:
+                    warnings.append(f"Mapped filter field '{f.field}' -> '{mapped}'.")
+                f.field = mapped
+                fixed_filters.append(f)
+            else:
+                warnings.append(f"Dropped unknown filter field: {f.field}")
+        plan.filters = fixed_filters
+
+        # 5) sort: keep only valid targets
+        valid_sort_targets = set(plan.dimensions)
+        valid_sort_targets.add(plan.metric)
+        fixed_sort = []
+        for s in plan.sort:
+            sf = self._resolve_field_alias(s.field)
+            if sf in valid_sort_targets:
+                s.field = sf
+                fixed_sort.append(s)
+            else:
+                warnings.append(f"Dropped unsupported sort field: {s.field}")
+        plan.sort = fixed_sort
+
+        if plan.limit is None or plan.limit <= 0:
+            plan.limit = 50
+        elif plan.limit > 1000:
+            plan.limit = 1000
+
+        return plan, warnings
+
     def translate(
         self,
         user_query: str,
         active_filters: Dict[str, Any] | None = None,
     ) -> TranslationResult:
-        resolver_warnings: List[str] = []
+        warnings: List[str] = []
         plan_agent1: QueryPlan | None = None
         plan_agent2: QueryPlan | None = None
-        schema_context_str = self._build_schema_context()
-        constraints_str = (
-            "Strictly use only the allowed fields. "
-            "Limits should never exceed 1000. "
-            "Do not output SQL."
-        )
-        agent1_constraints_str = (
-            "Use business semantics only. "
-            "Do not map to physical schema names."
-        )
 
-        # 1. Extract plan
+        schema_context_str = self._build_schema_context()
+        agent1_constraints_str = "Use business semantics only. Do not map to physical schema names."
+
+        # 1) Agent1: NL -> logical plan
         plan = self.extractor.extract(
             question=user_query,
             schema_context="",
@@ -229,32 +289,35 @@ class NL2SQLEngine:
                 plan_agent2=plan_agent2,
             )
 
-        # 2. Merge active filters
+        # 2) merge UI filters
         plan = self._merge_active_filters(plan, active_filters)
 
-        # 3. Agent 2 schema-aware resolve (best-effort)
+        # 3) Agent2: schema-aware resolve
         if self.resolver is not None and self.allowed_fields:
             try:
                 plan = self.resolver.resolve(
                     plan=plan,
                     schema_context=schema_context_str,
                     constraints=(
-                        "Map dimensions/filters to canonical schema fields. "
-                        "Preserve intent and metric unless invalid. "
+                        "Map dimensions/filters to canonical schema fields only. "
+                        "If intent is count, set dimensions=[] and sort=[]. "
                         "Do not output SQL."
                     ),
                 )
             except Exception as e:
-                resolver_warnings.append(f"Agent2 resolver fallback to rules: {e}")
+                warnings.append(f"Agent2 resolver fallback to rules: {e}")
 
-        # 4. Semantic normalization
+        # 4) deterministic normalization
         plan = normalize_plan_fields(plan, self.mapper, None)
         plan = normalize_filter_values(plan, self.value_synonyms)
         plan = self._normalize_sort_fields(plan)
         plan = self._canonicalize_fields(plan)
         plan_agent2 = plan.model_copy(deep=True)
 
-        # 5. Structured-plan validation
+        plan, normalize_warnings = self._best_effort_normalize(plan)
+        warnings.extend(normalize_warnings)
+
+        # 5) validate (warn-only in best-effort mode)
         plan_warnings = validate_query_plan(
             plan,
             allowed_fields=self.allowed_fields if self.allowed_fields else None,
@@ -262,31 +325,21 @@ class NL2SQLEngine:
             max_limit=1000,
             require_aggregation_metric=False,
         )
+        warnings.extend(plan_warnings)
 
-        if plan_warnings:
+        # 6) unsupported intent
+        if str(getattr(plan.intent, "value", plan.intent)) == "unsupported":
             return TranslationResult(
                 sql="",
                 plan=plan,
                 physical_plan=None,
                 valid=False,
-                warnings=resolver_warnings + plan_warnings,
+                warnings=warnings + ["Unsupported query intent."],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
             )
 
-        # 6. Unsupported intent guard
-        if str(plan.intent) == "Intent.unsupported" or getattr(plan.intent, "value", "") == "unsupported":
-            return TranslationResult(
-                sql="",
-                plan=plan,
-                physical_plan=None,
-                valid=False,
-                warnings=resolver_warnings + ["Unsupported query intent."],
-                plan_agent1=plan_agent1,
-                plan_agent2=plan_agent2,
-            )
-
-        # 7. Build physical plan
+        # 7) physical plan
         try:
             physical_plan = self.planner.build(plan, metrics=self.metrics)
         except Exception as e:
@@ -295,12 +348,12 @@ class NL2SQLEngine:
                 plan=plan,
                 physical_plan=None,
                 valid=False,
-                warnings=resolver_warnings + [f"Physical planning failed: {e}"],
+                warnings=warnings + [f"Physical planning failed: {e}"],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
             )
 
-        # 8. Build SQL
+        # 8) SQL generation
         try:
             sql = build_sql(physical_plan)
         except Exception as e:
@@ -309,19 +362,17 @@ class NL2SQLEngine:
                 plan=plan,
                 physical_plan=physical_plan,
                 valid=False,
-                warnings=resolver_warnings + [f"SQL generation failed: {e}"],
+                warnings=warnings + [f"SQL generation failed: {e}"],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
             )
 
-        # No raw-SQL checking here anymore.
-        # Final SQL policy is enforced only in app/db/sql_guard.py before execution.
         return TranslationResult(
             sql=sql,
             plan=plan,
             physical_plan=physical_plan,
             valid=True,
-            warnings=resolver_warnings,
+            warnings=warnings,
             plan_agent1=plan_agent1,
             plan_agent2=plan_agent2,
         )
