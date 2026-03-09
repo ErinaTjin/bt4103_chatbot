@@ -24,6 +24,7 @@ class TranslationResult:
         warnings: List[str],
         plan_agent1: QueryPlan | None = None,
         plan_agent2: QueryPlan | None = None,
+        metadata: Dict[str, Any] | None = None,
     ):
         self.sql = sql
         self.plan = plan
@@ -32,6 +33,7 @@ class TranslationResult:
         self.warnings = warnings
         self.plan_agent1 = plan_agent1
         self.plan_agent2 = plan_agent2
+        self.metadata = metadata or {"pipeline": "engine"}
 
 
 class NL2SQLEngine:
@@ -287,6 +289,7 @@ class NL2SQLEngine:
                 warnings=[plan.clarification_question or "Clarification required."],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
+                metadata={"pipeline": "engine"},
             )
 
         # 2) merge UI filters
@@ -337,6 +340,7 @@ class NL2SQLEngine:
                 warnings=warnings + ["Unsupported query intent."],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
+                metadata={"pipeline": "engine"},
             )
 
         # 7) physical plan
@@ -351,6 +355,7 @@ class NL2SQLEngine:
                 warnings=warnings + [f"Physical planning failed: {e}"],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
+                metadata={"pipeline": "engine"},
             )
 
         # 8) SQL generation
@@ -365,6 +370,7 @@ class NL2SQLEngine:
                 warnings=warnings + [f"SQL generation failed: {e}"],
                 plan_agent1=plan_agent1,
                 plan_agent2=plan_agent2,
+                metadata={"pipeline": "engine"},
             )
 
         return TranslationResult(
@@ -375,4 +381,9 @@ class NL2SQLEngine:
             warnings=warnings,
             plan_agent1=plan_agent1,
             plan_agent2=plan_agent2,
+            metadata={
+                "pipeline": "engine",
+                "validation_level": "L1",
+                "uncertainty_flag": False,
+            },
         )

@@ -25,6 +25,9 @@ class NL2SQLState(TypedDict, total=False):
     retry_count: int
     max_retries: int
 
+    validation_level: str
+    uncertainty_flag: bool
+
     needs_clarification: bool
     clarification_question: Optional[str]
 

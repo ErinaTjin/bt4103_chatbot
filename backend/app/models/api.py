@@ -30,5 +30,6 @@ class NL2SQLResponse(BaseModel):
     plan_agent1: dict[str, Any] | None = None
     plan_agent2: dict[str, Any] | None = None
     warnings: list[str]
+    metadata: dict[str, Any] | None = None
     executed: bool
     data: SQLResponse | None = None

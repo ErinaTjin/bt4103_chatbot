@@ -103,6 +103,7 @@ def nl2sql_translate(req: NL2SQLRequest):
             "plan_agent1": result.plan_agent1.model_dump() if result.plan_agent1 else None,
             "plan_agent2": result.plan_agent2.model_dump() if result.plan_agent2 else None,
             "warnings": result.warnings,
+            "metadata": getattr(result, "metadata", None),
             "executed": False,
             "data": None,
         }

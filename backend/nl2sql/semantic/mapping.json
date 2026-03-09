@@ -1,0 +1,29 @@
+{
+  "field_aliases": {
+    "cancer_type": "ICD10",
+    "histology": "ICDO3",
+    "stage": "value_as_concept_name",
+    "diagnosis_year": "condition_start_date",
+    "age": "age_group"
+  },
+  "derived_filters": {
+    "age_group": {
+      "under_50": {
+        "field": "__expr__",
+        "op": "raw",
+        "value": "date_diff('year', person.birth_datetime, condition_occurrence.condition_start_date) < 50"
+      },
+      "50_and_above": {
+        "field": "__expr__",
+        "op": "raw",
+        "value": "date_diff('year', person.birth_datetime, condition_occurrence.condition_start_date) >= 50"
+      }
+    }
+  },
+  "eav_rules": {
+    "stage_measurement_concepts": [
+      "TNM Clin Stage Group",
+      "TNM Path Stage Group"
+    ]
+  }
+}

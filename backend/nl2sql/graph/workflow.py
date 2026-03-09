@@ -28,24 +28,25 @@ class NL2SQLGraphWorkflow:
         builder.add_node("agent1", nodes.agent1_node)
         builder.add_node("agent2", nodes.agent2_node)
         builder.add_node("normalize", nodes.normalize_node)
-        builder.add_node("plan_sql", nodes.plan_sql_node)
         builder.add_node("validate", nodes.validate_node)
+        builder.add_node("plan_sql", nodes.plan_sql_node)
         builder.add_node("final", nodes.final_node)
 
         builder.add_edge(START, "context")
         builder.add_edge("context", "agent1")
         builder.add_edge("agent1", "agent2")
         builder.add_edge("agent2", "normalize")
-        builder.add_edge("normalize", "plan_sql")
-        builder.add_edge("plan_sql", "validate")
+        builder.add_edge("normalize", "validate")
         builder.add_conditional_edges(
             "validate",
             route_after_validate,
             {
                 "agent2": "agent2",
+                "plan_sql": "plan_sql",
                 "final": "final",
             },
         )
+        builder.add_edge("plan_sql", "final")
         builder.add_edge("final", END)
 
         return builder.compile()
@@ -66,6 +67,8 @@ class NL2SQLGraphWorkflow:
             "max_retries": 2,
             "error": None,
             "valid": False,
+            "validation_level": "L1",
+            "uncertainty_flag": False,
         }
 
         out = self._compiled.invoke(initial_state)
