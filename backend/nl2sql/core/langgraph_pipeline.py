@@ -99,7 +99,44 @@ class NL2SQLLangGraph:
         final_state = self._app.invoke(initial_state)
         return final_state["result"]
 
+    def _should_use_context_agent(
+        self,
+        user_query: str,
+        conversation_history: List[Dict[str, Any] | str] | None,
+    ) -> bool:
+        if not conversation_history:
+            return False
+
+        q = user_query.strip().lower()
+        follow_up_markers = (
+            "what about",
+            "how about",
+            "and ",
+            "then ",
+            "also ",
+            "same",
+            "those",
+            "that",
+            "these",
+            "it",
+        )
+        return any(marker in q for marker in follow_up_markers)
+
     def _node_context_agent(self, state: GraphState) -> GraphState:
+        if not self._should_use_context_agent(
+            user_query=state["user_query"],
+            conversation_history=state.get("conversation_history"),
+        ):
+            return {
+                "context_resolution": {
+                    "standalone_question": state["user_query"],
+                    "context_summary": None,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                },
+                "resolved_question": state["user_query"].strip(),
+            }
+
         ctx = self.context_agent.resolve(
             question=state["user_query"],
             conversation_history=state.get("conversation_history"),
