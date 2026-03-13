@@ -47,7 +47,7 @@ Rules:
 - Prefer schema/table/column names from Relevant schema context.
 - Apply active filters unless they conflict with the user question.
 - Realize Agent1 filters in SQL predicates (WHERE or equivalent CTE filters).
-- If multiple tables are used, include explicit JOIN clauses.
+- CRITICAL: When referencing multiple tables, ALWAYS use explicit JOIN clauses (INNER JOIN, LEFT JOIN, etc.). NEVER use implicit joins with commas in FROM clause.
 - For EAV-style tables, use both:
   1) concept/attribute selector (for example measurement_concept_name)
   2) result/value selector (for example value_as_concept_name), when relevant to the question.
