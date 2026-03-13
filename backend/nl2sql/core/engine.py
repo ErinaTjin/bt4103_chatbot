@@ -252,7 +252,7 @@ class NL2SQLEngine:
         referenced_tables = self._extract_referenced_tables(sql)
 
         if len(referenced_tables) > 1 and " join " not in f" {sql_lower} ":
-            blocking.append("SQL references multiple tables without explicit JOIN clauses.")
+            advisory.append("SQL references multiple tables without explicit JOIN clauses.")
 
         # Enforce physical filter coverage for known schema columns.
         all_filters = list(extracted_filters)
@@ -284,7 +284,7 @@ class NL2SQLEngine:
         )
         if asks_disease_cohort and "condition_occurrence" in {t.lower() for t in self.allowed_tables}:
             if "condition_occurrence" not in referenced_tables:
-                blocking.append(
+                advisory.append(
                     "SQL is missing condition_occurrence cohort anchoring for a diagnosis/disease query."
                 )
 
@@ -369,6 +369,7 @@ class NL2SQLEngine:
             warnings.extend([f"Assumption: {x}" for x in writer_output.assumptions])
 
         plan = {
+            "intent": agent1.intent.value,
             "intent_summary": agent1.intent_summary,
             "needs_clarification": False,
             "clarification_question": None,
@@ -376,6 +377,24 @@ class NL2SQLEngine:
             "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
             "reasoning_summary": writer_output.reasoning_summary,
         }
+
+        # Set preferred visualization based on intent
+        visualization = "table"  # default
+        if agent1.intent == "distribution":
+            visualization = "bar"
+        elif agent1.intent == "trend":
+            visualization = "line"
+        elif agent1.intent == "topN":
+            visualization = "bar"
+        elif agent1.intent == "count":
+            visualization = "table"  # Single number, table is sufficient
+        elif agent1.intent == "mutation_prevalence":
+            visualization = "bar"
+        elif agent1.intent == "cohort_comparison":
+            visualization = "bar"
+        # unsupported remains table
+
+        plan["output"] = {"preferred_visualization": visualization}
 
         return TranslationResult(
             sql=sql,

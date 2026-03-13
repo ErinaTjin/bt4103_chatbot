@@ -18,6 +18,7 @@ Active filters (already applied in UI):
 
 Return JSON in this shape:
 {{
+  "intent": "count|distribution|trend|topN|mutation_prevalence|cohort_comparison|unsupported",
   "intent_summary": "short plain-English summary of what SQL should answer",
   "needs_clarification": false,
   "clarification_question": null,

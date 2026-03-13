@@ -61,6 +61,7 @@ class PhysicalPlan(BaseModel):
 
 
 class Agent1ContextSummary(BaseModel):
+    intent: Intent
     intent_summary: str
     needs_clarification: bool = False
     clarification_question: Optional[str] = None
