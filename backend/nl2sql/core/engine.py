@@ -191,6 +191,59 @@ class NL2SQLEngine:
             ]
         )
 
+    ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like", "or_like"}
+
+    def _validate_query_plan(self, summary: "Agent1ContextSummary") -> List[str]:
+        """
+        Validate Agent1ContextSummary against QueryPlan requirements
+        before passing to Agent2 SQL generation.
+        Checks: intent present, filters well-formed (field/op/value),
+        op is in allowed set, in/or_like value is a list, dimensions implied.
+        """
+        errors: List[str] = []
+
+        # intent: intent_summary must be non-empty
+        if not summary.intent_summary or not summary.intent_summary.strip():
+            errors.append("Required field 'intent' is missing: intent_summary is empty.")
+
+        # filters: each filter must have non-empty field, valid op, and non-None value
+        if summary.extracted_filters is None:
+            errors.append("Required field 'filters' is missing.")
+        else:
+            for i, f in enumerate(summary.extracted_filters):
+                if not f.field or not f.field.strip():
+                    errors.append(f"filters[{i}].field is empty or missing.")
+
+                if not f.op or not f.op.strip():
+                    errors.append(f"filters[{i}].op is empty or missing.")
+                elif f.op.lower() not in self.ALLOWED_FILTER_OPS:
+                    errors.append(
+                        f"filters[{i}].op '{f.op}' is not a valid operator. "
+                        f"Allowed: {sorted(self.ALLOWED_FILTER_OPS)}"
+                    )
+                elif f.op.lower() in {"in", "or_like"} and not isinstance(f.value, list):
+                    errors.append(
+                        f"filters[{i}].op='{f.op}' requires value to be a list, "
+                        f"got {type(f.value).__name__}."
+                    )
+
+                if f.value is None:
+                    errors.append(f"filters[{i}].value is None.")
+
+        # dimensions: check that intent_summary implies grouping for distribution/topN intents
+        if summary.intent_summary:
+            needs_dimension = any(
+                kw in summary.intent_summary.lower()
+                for kw in ["distribution", "breakdown", "by", "per", "trend", "top"]
+            )
+            if needs_dimension and not summary.extracted_filters:
+                errors.append(
+                    "Required field 'dimensions' is missing: "
+                    "intent implies grouping but no dimension or filter provided."
+                )
+
+        return errors
+
     def _validate_sql_shape(self, sql: str) -> str | None:
         candidate = sql.strip().rstrip(";").strip().lower()
         if not candidate:
@@ -309,6 +362,40 @@ class NL2SQLEngine:
             conversation_history=conversation_history,
             active_filters=active_filters,
         )
+
+        # QueryPlan validation — before SQL generation
+        plan_errors = self._validate_query_plan(agent1)
+        if plan_errors:
+            retry_question = (
+                user_query
+                + "\n\nPrevious attempt had validation issues: "
+                + "; ".join(plan_errors)
+                + ". Please ensure intent_summary is specific and all filters have valid field, op, and value."
+            )
+            agent1 = self.extractor.extract(
+                question=retry_question,
+                conversation_history=conversation_history,
+                active_filters=active_filters,
+            )
+            plan_errors = self._validate_query_plan(agent1)
+            if plan_errors:
+                agent1.validation_errors = plan_errors
+                return TranslationResult(
+                    sql="",
+                    plan={
+                        "intent_summary": agent1.intent_summary,
+                        "needs_clarification": False,
+                        "clarification_question": None,
+                        "active_filters": agent1.active_filters,
+                        "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
+                        "validation_errors": plan_errors,
+                    },
+                    valid=False,
+                    warnings=[f"QueryPlan validation failed: {e}" for e in plan_errors],
+                    plan_agent1=agent1.model_dump(),
+                    plan_agent2=None,
+                )
+
         plan_agent1 = agent1.model_dump()
 
         if agent1.needs_clarification:

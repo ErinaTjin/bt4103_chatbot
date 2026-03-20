@@ -66,6 +66,7 @@ class Agent1ContextSummary(BaseModel):
     clarification_question: Optional[str] = None
     extracted_filters: List[Filter] = Field(default_factory=list)
     active_filters: dict[str, Any] = Field(default_factory=dict)
+    validation_errors: List[str] = Field(default_factory=list)
 
 
 class ContextResolution(BaseModel):

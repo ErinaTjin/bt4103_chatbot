@@ -22,6 +22,8 @@ class GraphState(TypedDict, total=False):
     blocking_issues: List[str]
     rewriter_feedback: str
     retry_count: int
+    agent1_retry_count: int
+    plan_validation_errors: List[str]
 
     agent1: Dict[str, Any]
     plan_agent1: Dict[str, Any]
@@ -38,8 +40,10 @@ class NL2SQLLangGraph:
     Graph orchestrator that wraps the existing Agent1/Agent2 components.
 
     Flow:
-      agent1_context -> (clarify? finalize) -> agent2_sql_writer -> validate_sql
-      -> (pass finalize | fail and retry once -> agent2_sql_writer)
+      context_agent -> agent1_context -> validate_query_plan
+      -> (fail + retry once -> agent1_context | fail after retry -> finalize)
+      -> agent2_sql_writer -> validate_sql
+      -> (pass -> finalize | fail and retry once -> agent2_sql_writer)
     """
 
     def __init__(self, engine: NL2SQLEngine) -> None:
@@ -56,6 +60,7 @@ class NL2SQLLangGraph:
         graph = StateGraph(GraphState)
         graph.add_node("context_agent", self._node_context_agent)
         graph.add_node("agent1_context", self._node_agent1_context)
+        graph.add_node("validate_query_plan", self._node_validate_query_plan)
         graph.add_node("agent2_sql_writer", self._node_agent2_sql_writer)
         graph.add_node("validate_sql", self._node_validate_sql)
         graph.add_node("finalize", self._node_finalize)
@@ -70,7 +75,16 @@ class NL2SQLLangGraph:
         graph.add_conditional_edges(
             "agent1_context",
             self._route_after_agent1,
-            {"to_writer": "agent2_sql_writer", "to_finalize": "finalize"},
+            {"to_validate_plan": "validate_query_plan", "to_finalize": "finalize"},
+        )
+        graph.add_conditional_edges(
+            "validate_query_plan",
+            self._route_after_plan_validation,
+            {
+                "to_writer": "agent2_sql_writer",
+                "to_retry_agent1": "agent1_context",
+                "to_finalize": "finalize",
+            },
         )
         graph.add_edge("agent2_sql_writer", "validate_sql")
         graph.add_conditional_edges(
@@ -95,6 +109,8 @@ class NL2SQLLangGraph:
             "warnings": [],
             "blocking_issues": [],
             "retry_count": 0,
+            "agent1_retry_count": 0,
+            "plan_validation_errors": [],
         }
         final_state = self._app.invoke(initial_state)
         return final_state["result"]
@@ -130,7 +146,34 @@ class NL2SQLLangGraph:
     def _route_after_agent1(self, state: GraphState) -> str:
         if state["agent1"].get("needs_clarification", False):
             return "to_finalize"
-        return "to_writer"
+        return "to_validate_plan"
+
+    def _node_validate_query_plan(self, state: GraphState) -> GraphState:
+        from nl2sql.core.models import Agent1ContextSummary
+        agent1_data = state["agent1"]
+        agent1 = Agent1ContextSummary.model_validate(agent1_data)
+        errors = self.engine._validate_query_plan(agent1)
+        return {
+            "plan_validation_errors": errors,
+        }
+
+    def _route_after_plan_validation(self, state: GraphState) -> str:
+        errors = state.get("plan_validation_errors", [])
+        if not errors:
+            return "to_writer"
+        # retry Agent 1 once
+        if state.get("agent1_retry_count", 0) < 1:
+            state["agent1_retry_count"] = state.get("agent1_retry_count", 0) + 1
+            # inject error feedback into the question for the retry
+            feedback = "; ".join(errors)
+            state["resolved_question"] = (
+                (state.get("resolved_question") or state["user_query"])
+                + f"\n\nPrevious attempt had validation issues: {feedback}. "
+                "Please ensure intent_summary is specific and all filters have valid field, op, and value."
+            )
+            return "to_retry_agent1"
+        # still failing after retry — go to finalize with structured error
+        return "to_finalize"
 
     def _node_agent2_sql_writer(self, state: GraphState) -> GraphState:
         resolved_question = state.get("resolved_question") or state["user_query"]
@@ -230,6 +273,27 @@ class NL2SQLLangGraph:
                     or "Clarification required for follow-up context."
                 ],
                 plan_agent1=None,
+                plan_agent2=None,
+            )
+            return {"result": result}
+
+        # QueryPlan validation failed after retry
+        plan_validation_errors = state.get("plan_validation_errors", [])
+        if plan_validation_errors and state.get("agent1_retry_count", 0) >= 1:
+            agent1 = state.get("agent1", {})
+            result = TranslationResult(
+                sql="",
+                plan={
+                    "intent_summary": agent1.get("intent_summary", ""),
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "active_filters": agent1.get("active_filters", {}),
+                    "extracted_filters": agent1.get("extracted_filters", []),
+                    "validation_errors": plan_validation_errors,
+                },
+                valid=False,
+                warnings=[f"QueryPlan validation failed: {e}" for e in plan_validation_errors],
+                plan_agent1=state.get("plan_agent1"),
                 plan_agent2=None,
             )
             return {"result": result}
