@@ -17,7 +17,7 @@ export interface Filter {
 }
 
 export interface OutputPrefs {
-  preferred_visualization?: "bar" | "line" | "pie" | "table" | string | null;
+  preferred_visualization?: "bar" | "line" | "pie" | "metric" | "table" | string | null;
 }
 
 export interface QueryPlan {

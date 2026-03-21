@@ -387,7 +387,7 @@ class NL2SQLEngine:
         elif agent1.intent == "topN":
             visualization = "bar"
         elif agent1.intent == "count":
-            visualization = "table"  # Single number, table is sufficient
+            visualization = "metric"  # Single number, show as metric card
         elif agent1.intent == "mutation_prevalence":
             visualization = "bar"
         elif agent1.intent == "cohort_comparison":
