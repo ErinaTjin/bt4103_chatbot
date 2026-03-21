@@ -16,7 +16,7 @@ const COLORS = [
 
 interface ResultsChartProps {
   data: DataRow[];
-  type: "bar" | "line" | "pie" | string;
+  type: "bar" | "line" | "pie" | "metric" | string;
 }
 
 export function ResultsChart({ data, type }: ResultsChartProps) {
@@ -25,14 +25,22 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
   // Identify keys for charting
   // Typically, the first key is the dimension, and others are metrics
   const keys = Object.keys(data[0]);
-  const dimensionKey = keys[0];
   const metricKeys = keys.slice(1);
 
-  // Vega-Lite requires a slightly different data format if there are multiple metrics
-  // to be displayed on the same chart (i.e. 'wide' to 'long' format folding).
-  // However, assuming standard single-metric output for NL2SQL for simplicity,
-  // or relying on primary metric if there are multiple.
-  const primaryMetric = metricKeys[0];
+  // For metric card (single value), use the first key as the metric
+  // For other charts, first key is dimension, rest are metrics
+  let dimensionKey: string;
+  let primaryMetric: string;
+
+  if (type === "metric" || metricKeys.length === 0) {
+    // Single column case - the first key is the metric value
+    primaryMetric = keys[0];
+    dimensionKey = "";
+  } else {
+    // Multi-column case - first is dimension, second is metric
+    dimensionKey = keys[0];
+    primaryMetric = metricKeys[0];
+  }
 
   const renderChart = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,6 +105,25 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           },
         };
         break;
+
+      case "metric":
+        // For single metric card display
+        const value = data[0]?.[primaryMetric] ?? 0;
+        return (
+          <div className="flex items-center justify-center w-full h-64 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-8">
+            <div className="text-center">
+              <p className="text-sm text-gray-500 uppercase tracking-widest font-semibold mb-4">
+                Result
+              </p>
+              <p className="text-6xl font-bold text-blue-600 mb-2">
+                {typeof value === "number" ? value.toLocaleString() : value}
+              </p>
+              <p className="text-xs text-gray-400 uppercase tracking-widest">
+                {primaryMetric}
+              </p>
+            </div>
+          </div>
+        );
 
       case "bar":
       default:
