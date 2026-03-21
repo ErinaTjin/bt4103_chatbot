@@ -3,7 +3,6 @@ import os
 import sys
 from pathlib import Path
 
-# Allow running this file directly: `python backend/nl2sql/cli/demo_cli.py`
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -13,18 +12,18 @@ from nl2sql.core.engine import NL2SQLEngine
 
 
 def main() -> None:
-    semantic_dir = os.path.join(ROOT, "backend", "nl2sql", "semantic_layer") #points to where semantic layer files are expected
+    semantic_dir = os.path.join(ROOT, "backend", "nl2sql", "semantic")
     sl = None
     if os.path.isdir(semantic_dir):
         sl = SemanticLayerLoader(semantic_dir).load()
 
-    engine = NL2SQLEngine(semantic_api=sl) #creates engine
+    engine = NL2SQLEngine(semantic_api=sl)
 
-    print("NCCS NL→SQL MVP Demo (type 'exit' to quit)")
-    if engine.allowed_fields:
-        print(f"Loaded semantic layer: {len(engine.allowed_fields)} fields")
+    print("NCCS NL2SQL Demo (type 'exit' to quit)")
+    if engine.allowed_tables:
+        print(f"Loaded semantic layer: {len(engine.allowed_tables)} tables")
     else:
-        print("Semantic layer not found; field validation disabled")
+        print("Semantic layer not found; schema context disabled")
 
     while True:
         question = input("\nAsk: ").strip()
@@ -33,10 +32,14 @@ def main() -> None:
         if not question:
             continue
 
-        result = engine.translate(question) #natural language goes in, structured plan and SQL comes out
+        result = engine.translate(question)
 
-        print("\nQueryPlan JSON:")
-        print(json.dumps(result.plan.model_dump(), indent=2))
+        print("\nPlan JSON:")
+        print(json.dumps(result.plan, indent=2))
+        print("\nAgent1 JSON:")
+        print(json.dumps(result.plan_agent1, indent=2))
+        print("\nAgent2 JSON:")
+        print(json.dumps(result.plan_agent2, indent=2))
         print("\nSQL:")
         print(result.sql)
         print("\nGuardrails:")

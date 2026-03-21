@@ -31,8 +31,8 @@ export async function queryBackend(message: string): Promise<QueryResponse> {
       warnings: raw.warnings ?? [],
     },
     warnings: raw.warnings ?? [],
-    error: raw.executed === false && raw.warnings?.length > 0
-      ? raw.warnings.join(', ')
+    error: raw.error || (raw.executed === false && !raw.warnings?.length)
+      ? 'Failed to execute query'
       : undefined,
   };
 }
