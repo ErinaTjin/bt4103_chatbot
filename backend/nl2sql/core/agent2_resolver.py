@@ -8,6 +8,9 @@ from .llm_adapter import LLMAdapter
 from .models import Agent2SQLWriterOutput
 from .agent2_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
+# DEBUG
+import logging
+log = logging.getLogger(__name__)
 
 class Agent2QueryPlanResolver:
     """
@@ -68,6 +71,10 @@ class Agent2QueryPlanResolver:
             active_filters=active_filters,
         )
         raw = self.llm.generate(prompt=prompt, system=SYSTEM_PROMPT)
+
+        # DEBUG
+        log.info("Agent2 raw LLM response: %s", raw) 
+        
         try:
             return Agent2SQLWriterOutput.model_validate_json(self._clean_json(raw))
         except (ValidationError, json.JSONDecodeError):
@@ -76,6 +83,8 @@ class Agent2QueryPlanResolver:
                 + "\nIMPORTANT: Output ONLY valid JSON with keys sql/reasoning_summary/assumptions/warnings."
             )
             raw_retry = self.llm.generate(prompt=retry_prompt, system=SYSTEM_PROMPT)
+            # DEBUG 
+            log.info("Agent2 retry LLM response: %s", raw_retry)
             return Agent2SQLWriterOutput.model_validate_json(self._clean_json(raw_retry))
 
     @staticmethod

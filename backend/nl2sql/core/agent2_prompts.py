@@ -44,6 +44,10 @@ Return JSON in this shape:
 Rules:
 - Output JSON only.
 - SQL must be a single SELECT/WITH query.
+- CRITICAL: ALWAYS prefix every table with its schema: \"anchor_view\".\"table_name\". 
+  NEVER reference a bare table name like 'person' or 'condition_occurrence' without the schema prefix.
+  Correct: FROM \"anchor_view\".\"person\" AS person
+  Wrong: FROM person, FROM condition_occurrence
 - Prefer schema/table/column names from Relevant schema context.
 - Apply active filters unless they conflict with the user question.
 - Realize Agent1 filters in SQL predicates (WHERE or equivalent CTE filters).
