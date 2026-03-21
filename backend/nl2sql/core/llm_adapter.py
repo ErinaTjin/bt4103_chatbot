@@ -8,8 +8,8 @@ class LLMAdapter:
         model: str = "qwen2.5-coder:14b",
         base_url: str = "http://localhost:11434",
         temperature: float = 0,
-        num_ctx: int = 4096,
-        num_predict: int = 1024,
+        num_ctx: int = 8192,
+        num_predict: int = 4096,
         timeout: int = 180,
     ) -> None:
         self.model = model

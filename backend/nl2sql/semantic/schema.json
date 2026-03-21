@@ -16,7 +16,7 @@
         {
           "name": "year_of_birth",
           "type": "int",
-          "description": "year the patient was born. To filter by age, use: YEAR(CURRENT_DATE) - year_of_birth >= <age>. To filter by diagnosis year, use condition_start_date instead."
+          "description": "year the patient was born. To calculate age at diagnosis use: YEAR(condition_start_date) - year_of_birth. For 5-year age groups always produce a readable label using CONCAT(CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INT), '-', CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 + 4 AS INT)) AS age_group, and include age_group_start as a separate column for ordering. Always GROUP BY both age_group and age_group_start, and ORDER BY age_group_start."
         },
         {
           "name": "race_source_value",
@@ -45,20 +45,15 @@
           "description": "date of diagnosis. When filtering for a specific year, always generate TWO filters: one with >= 'YYYY-01-01' and one with <= 'YYYY-12-31'. Only use a single bound for filtering before or after a certain year."
         },
         {
-          "name": "condition_source_value",
-          "type": "str",
-          "description": "condition stored as: topo_code||topo_description||histo_code||histo_description. e.g. 'C18.3||Hepatic flexure||8140.3||Adenocarcinoma'. Prefer filtering on ICD10 or ICDO3 columns for site/histology. If filtering this column, use op='or_like' with value=[\"%C18%\", \"%C19%\", \"%C20%\"] for all colorectal cancer. Do NOT filter using generic labels like 'colorectal cancer'."
-        },
-        {
-          "name": "ICD10",
-          "type": "str",
-          "description": "ICD-10 topography (site) code. Use this column to filter cancer site. For all colorectal cancer use op='in' with value=['C18.0','C18.1','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.8','C18.9','C19','C20']. For colon only use op='in' with C18.x and C19 codes. For rectum use op='=' with value='C20'. For a specific sub-site use op='=' with the exact code."
-        },
-        {
-          "name": "ICDO3",
-          "type": "str",
-          "description": "ICD-O-3 morphology (histology) code. Use this column to filter tumour type. Common values: '8140/3' (adenocarcinoma NOS), '8480/3' (mucinous adenocarcinoma), '8490/3' (signet ring cell carcinoma), '8263/3' (tubulovillous adenoma). Use op='like' e.g. '%8140%' to match a histology family."
-        }
+        "name": "condition_source_value",
+        "type": "str",
+        "description": "Use ONLY for histology/tumour type filtering, NOT for cancer site filtering (use ICD10 for that). Format: topo_code||topo_description||histo_code||histo_description e.g. 'C18.3||Hepatic flexure||81403.0||Adenocarcinoma, nos'. For histology filtering use op='like' with these exact patterns: '%81403.0%' for adenocarcinoma NOS, '%84803.0%' for mucinous adenocarcinoma, '%84903.0%' for signet ring cell carcinoma, '%82633.0%' for adenocarcinoma in tubulovillous adenoma. NEVER use this column to filter cancer site or colorectal cancer cohort."
+      },
+      {
+        "name": "ICD10",
+        "type": "str",
+        "description": "PRIMARY column for cancer site/type filtering. ALWAYS use this column when the question asks about cancer type, cancer site, or diagnosis. Values in dataset: 'C18.0' (cecum), 'C18.2' (ascending colon), 'C18.3' (hepatic flexure), 'C18.4' (transverse colon), 'C18.5' (splenic flexure), 'C18.6' (descending colon), 'C18.7' (sigmoid colon), 'C18.9' (colon NOS), 'C19' (rectosigmoid), 'C20' (rectum). For all colorectal cancer use op='in' with value=['C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20']. For colon only use C18.x and C19. For rectum use op='=' with value='C20'."
+      }
       ]
     },
 
@@ -149,7 +144,7 @@
         {
           "name": "measurement_concept_name",
           "type": "str",
-          "description": "type of measurement — ALWAYS add a WHERE filter on this column to restrict to the relevant type. Use these exact values: for clinical staging use 'TNM Clin Stage Group'; for pathologic staging use 'TNM Path Stage Group'; for T/N/M components use 'TNM Clin T', 'TNM Clin N', 'TNM Clin M', 'TNM Path T', 'TNM Path N', 'TNM Path M'; for mutations use 'BRAF Mutation Conclusion', 'KRAS Mutation Conclusion', 'NRAS Mutation Conclusion', 'APC Mutation Conclusion'; for grade use 'Grade'; for laterality use 'Laterality'. If the question mentions stage without specifying clinical or pathologic, filter with IN ('TNM Clin Stage Group', 'TNM Path Stage Group'). When the question asks about multiple mutations together (e.g. KRAS, BRAF, NRAS) always use op='in' with value as a list e.g. ['KRAS Mutation Conclusion', 'BRAF Mutation Conclusion', 'NRAS Mutation Conclusion']. Never use op='=' when multiple mutations are requested. When measurement_concept_name is filtered to a mutation type, always also filter value_as_concept_name = 'mutation detected' unless the question asks for both detected and not detected. When measurement_concept_name is filtered to a stage type, filter value_as_concept_name using op='in' with the relevant stage values e.g. ['I', 'II', 'IIA', 'IIB', 'IIC'] for early stage or ['III', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC'] for advanced stage."
+          "description": "type of measurement. For staging questions, ALWAYS use both 'TNM Path Stage Group' and 'TNM Clin Stage Group' together with a COALESCE pattern: prefer path stage per patient, fall back to clin stage if path is null. Never just filter one stage type alone for a general staging question. Use a CTE to get one stage per patient first, then aggregate. For other measurements use exact values: 'BRAF Mutation Conclusion', 'KRAS Mutation Conclusion', 'NRAS Mutation Conclusion', 'APC Mutation Conclusion' for mutations; 'Grade' for grade; 'Laterality' for laterality."
         },
         {
           "name": "measurement_date",
@@ -159,7 +154,7 @@
         {
           "name": "value_as_concept_name",
           "type": "str",
-          "description": "result of the measurement. Mutation values: 'mutation detected', 'no mutation detected'. Grade values: 'Grade I', 'Grade II', 'Grade III', 'Grade/differentiation unknown, not stated, or not applicable'. Stage group values: 'I', 'II', 'IIA', 'IIB', 'IIC', 'III', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'. Laterality values: 'Not a paired site'."
+          "description": "result of the measurement. Stage values are substages: 'I', 'II', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'. To group into Roman numeral stages use CASE WHEN raw_stage = 'I' THEN 'I' WHEN raw_stage LIKE 'III%' THEN 'III' WHEN raw_stage LIKE 'II%' THEN 'II' WHEN raw_stage LIKE 'IV%' THEN 'IV' ELSE 'Unknown' END. Note: TNM Clin Stage Group only has values I, III, IIIB, IIIC, IVA, IVB, IVC, Stage Unknown — it is missing II and some substages. Mutation values: 'mutation detected', 'no mutation detected'. Grade values: 'Grade I', 'Grade II', 'Grade III', 'Grade/differentiation unknown, not stated, or not applicable'."
         },
         {
           "name": "value_source_value",

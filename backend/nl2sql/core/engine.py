@@ -7,6 +7,9 @@ from nl2sql.core.llm_adapter import LLMAdapter
 from nl2sql.core.agent1_extractor import Agent1QueryPlanExtractor
 from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
 
+# DEBUG
+import logging
+log = logging.getLogger(__name__)
 
 class TranslationResult:
     def __init__(
@@ -177,6 +180,47 @@ class NL2SQLEngine:
                 "AND m.value_as_concept_name = <requested_result_value>",
                 "GROUP BY m.measurement_concept_name",
                 "LIMIT 100;",
+                "",
+                "4) Stage breakdown with path-over-clin fallback:",
+                "WITH stage_per_patient AS (",
+                "    SELECT co.person_id,",
+                "        COALESCE(",
+                "            MAX(CASE WHEN m.measurement_concept_name = 'TNM Path Stage Group' THEN m.value_as_concept_name END),",
+                "            MAX(CASE WHEN m.measurement_concept_name = 'TNM Clin Stage Group' THEN m.value_as_concept_name END)",
+                "        ) AS raw_stage",
+                "    FROM \"anchor_view\".\"condition_occurrence\" AS co",
+                "    JOIN \"anchor_view\".\"measurement_mutation\" AS m ON co.person_id = m.person_id",
+                "    WHERE co.ICD10 IN ('C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20')",
+                "    AND m.measurement_concept_name IN ('TNM Path Stage Group', 'TNM Clin Stage Group')",
+                "    GROUP BY co.person_id",
+                "),",
+                "stage_grouped AS (",
+                "    SELECT person_id,",
+                "        CASE WHEN raw_stage = 'I' THEN 'I'",
+                "             WHEN raw_stage LIKE 'III%' THEN 'III'",
+                "             WHEN raw_stage LIKE 'II%' THEN 'II'",
+                "             WHEN raw_stage LIKE 'IV%' THEN 'IV'",
+                "             ELSE 'Unknown' END AS stage",
+                "    FROM stage_per_patient",
+                "    WHERE raw_stage IS NOT NULL AND raw_stage != 'Stage Unknown'",
+                ")",
+                "SELECT stage, COUNT(DISTINCT person_id) AS case_count",
+                "FROM stage_grouped",
+                "GROUP BY stage ORDER BY stage;",
+                "",
+                "5) Age at diagnosis grouping (5-year):",
+                "SELECT",
+                "    CONCAT(",
+                "        CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER),",
+                "        '-',",
+                "        CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 + 4 AS INTEGER)",
+                "    ) AS age_group,",
+                "    CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER) AS age_group_start",
+                "FROM \"anchor_view\".\"person\" AS p",
+                "INNER JOIN \"anchor_view\".\"condition_occurrence\" AS co ON p.person_id = co.person_id",
+                "WHERE co.ICD10 IN ('C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20')",
+                "GROUP BY age_group, age_group_start",
+                "ORDER BY age_group_start;",
             ]
         )
 
@@ -251,6 +295,14 @@ class NL2SQLEngine:
         sql_lower = sql.lower()
         referenced_tables = self._extract_referenced_tables(sql)
 
+        final_select = sql_lower.rsplit("select", 1)[-1].split("from")[0]
+        if "person_id" in final_select and "count" not in final_select:
+            blocking.append(
+                "SQL returns individual patient-level person_id values. "
+                "This is not permitted. Rephrase your question to use aggregation, "
+                "e.g. 'how many patients' instead of 'show me all patients'."
+            )
+
         if len(referenced_tables) > 1 and " join " not in f" {sql_lower} ":
             advisory.append("SQL references multiple tables without explicit JOIN clauses.")
 
@@ -304,12 +356,18 @@ class NL2SQLEngine:
     ) -> TranslationResult:
         warnings: List[str] = []
 
+        # DEBUG 
+        log.info("=== Engine.translate START: %s", user_query) 
+
         agent1 = self.extractor.extract(
             question=user_query,
             conversation_history=conversation_history,
             active_filters=active_filters,
         )
         plan_agent1 = agent1.model_dump()
+
+        # DEBUG 
+        log.info("Agent1 output: %s", agent1.model_dump())
 
         if agent1.needs_clarification:
             return TranslationResult(
@@ -343,6 +401,9 @@ class NL2SQLEngine:
             conversation_history=conversation_history,
             active_filters=active_filters,
         )
+
+        # DEBUG 
+        log.info("Agent2 output: %s", writer_output.model_dump())
 
         sql = writer_output.sql.strip()
         plan_agent2 = writer_output.model_dump()

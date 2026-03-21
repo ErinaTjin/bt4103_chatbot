@@ -89,7 +89,8 @@
       "diagnosis",
       "rectum",
       "colon",
-      "caesum"
+      "caesum", 
+      "colorectal"
     ],
     "histology": [
       "histology",
@@ -98,6 +99,7 @@
       "histo type",
       "histo code",
       "tumor type",
+      "tumour type",
       "adenocarcinoma",
       "signet ring",
       "mucinous",
@@ -246,22 +248,25 @@
       "rectal cancer",
       "rectal"
     ],
-    "8140/3 (shown as 81403.0)": [
-      "adenocarcinoma",
-      "adenocarcinoma nos"
+    "81403.0": [
+        "adenocarcinoma",
+        "adenocarcinoma nos",
+        "adenocarcinoma, nos"
     ],
-    "8480/3": [
-      "mucinous",
-      "mucinous adenocarcinoma"
+    "84803.0": [
+        "mucinous",
+        "mucinous adenocarcinoma"
     ],
-    "8490/3": [
-      "signet ring",
-      "signet ring cell",
-      "signet ring cell carcinoma"
+    "84903.0": [
+        "signet ring",
+        "signet ring cell",
+        "signet ring cell carcinoma",
+        "signet ring adenocarcinoma"
     ],
-    "8263/3": [
-      "tubulovillous",
-      "tubulovillous adenoma"
+    "82633.0": [
+        "tubulovillous",
+        "tubulovillous adenoma",
+        "adenocarcinoma in tubulovillous adenoma"
     ],
     "Grade I": [
       "grade 1",

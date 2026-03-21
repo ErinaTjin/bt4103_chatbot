@@ -7,6 +7,9 @@ from nl2sql.semantic.loader import SemanticLayerLoader
 from app.db.query_executor import execute_sql
 from app.db.duckdb_manager import duckdb_manager
 
+# DEBUG
+import logging
+log = logging.getLogger(__name__)
 
 class NL2SQLService:
     def __init__(self):
@@ -72,6 +75,10 @@ class NL2SQLService:
             conversation_history=conversation_history,
             active_filters=active_filters,
         )
+
+        # DEBUG
+        log.info("SQL generated: %s", result.sql)
+        log.info("Valid: %s | Warnings: %s", result.valid, result.warnings)        
 
         if not result.valid:
             return {

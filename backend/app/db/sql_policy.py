@@ -107,6 +107,13 @@ def _extract_referenced_tables(sql: str) -> set[tuple[str | None, str]]:
             found.add((schema.lower() if schema else None, table.lower()))
     return found
 
+def _extract_cte_names(sql: str) -> set[str]:
+    """Extract CTE names defined in WITH clause so they aren't flagged as external tables."""
+    pattern = re.compile(
+        r'\b(\w+)\s+AS\s*\(',
+        flags=re.IGNORECASE
+    )
+    return {match.group(1).lower() for match in pattern.finditer(sql)}
 
 def _ensure_allowed_tables(
     sql: str,
@@ -116,10 +123,14 @@ def _ensure_allowed_tables(
     allowed_table_set = {t.lower() for t in allowed_tables}
     expected_schema = allowed_schema.lower() if allowed_schema else None
 
+    cte_names = _extract_cte_names(sql)
     referenced = _extract_referenced_tables(sql)
     bad_refs: list[str] = []
 
     for schema, table in referenced:
+        if table in cte_names:
+            continue
+
         if table not in allowed_table_set:
             bad_refs.append(f"{schema + '.' if schema else ''}{table}")
             continue
