@@ -112,7 +112,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
               field: dimensionKey,
               type: "nominal",
               title: null,
-              axis: { labelAngle: 0 },
+              axis: { labelAngle: -30 }, // Rotate x labels for better readability
             },
             y: { field: primaryMetric, type: "quantitative", title: null },
             color: {
