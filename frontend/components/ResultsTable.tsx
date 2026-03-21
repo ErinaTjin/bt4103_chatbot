@@ -9,7 +9,7 @@ import {
   SortingState,
   ColumnDef,
 } from "@tanstack/react-table";
-import { DataRow } from "@/lib/types";
+import { DataRow } from "../lib/types";
 
 interface ResultsTableProps {
   data: DataRow[];
@@ -27,7 +27,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
       cell: ({ getValue }) => {
         const value = getValue();
         if (typeof value === "number") {
-            if (key.includes("percentage")) {
+          if (key.includes("percentage")) {
             return `${value.toLocaleString()}%`;
           }
           return value.toLocaleString();
@@ -54,7 +54,10 @@ export function ResultsTable({ data }: ResultsTableProps) {
         <table className="w-full text-left text-sm border-collapse">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id} className="bg-gray-50/50 border-bottom border-gray-100">
+              <tr
+                key={headerGroup.id}
+                className="bg-gray-50/50 border-bottom border-gray-100"
+              >
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
@@ -65,7 +68,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
                       <span>
                         {flexRender(
                           header.column.columnDef.header,
-                          header.getContext()
+                          header.getContext(),
                         )}
                       </span>
                       <span className="w-4 h-4 flex items-center justify-center">

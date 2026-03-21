@@ -2,7 +2,7 @@
 
 import React from "react";
 import { VegaEmbed } from "react-vega";
-import { DataRow } from "@/lib/types";
+import { DataRow } from "../lib/types";
 
 // Standardizing colors to match the previous Recharts palette where possible
 const COLORS = [

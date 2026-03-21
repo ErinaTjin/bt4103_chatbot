@@ -1,9 +1,9 @@
 "use client";
-import { Message } from "@/lib/types";
+import { Message } from "../lib/types";
 import { ResultsTable } from "./ResultsTable";
 import { ResultsChart } from "./ResultsChart";
 import { SummaryCard } from "./SummaryCard";
-import { generateSummary } from "@/lib/summaryGenerator";
+import { generateSummary } from "../lib/summaryGenerator";
 import {
   Database,
   FileJson,
@@ -29,9 +29,14 @@ export function MessageBubble({ message, isUser = false }: MessageBubbleProps) {
     (message.result?.data?.length ?? 0) > 0;
 
   // Generate summary from SQL results
-  const summary = message.result?.data && message.result?.query_plan?.intent
-    ? generateSummary(message.result.data, message.result.query_plan.intent)
-    : null;
+  const summary =
+    message.result?.data && message.result?.query_plan?.intent
+      ? generateSummary(
+          message.result.data,
+          message.result.query_plan.intent,
+          message.content,
+        )
+      : null;
 
   return (
     <div
