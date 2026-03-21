@@ -17,7 +17,7 @@ export interface Filter {
 }
 
 export interface OutputPrefs {
-  preferred_visualization?: "bar" | "line" | "pie" | "table" | string | null;
+  preferred_visualization?: "bar" | "line" | "pie" | "metric" | "table" | string | null;
 }
 
 export interface QueryPlan {
@@ -40,6 +40,8 @@ export interface QueryResponse {
   data: Record<string, string | number>[];
   sql: string;
   query_plan: QueryPlan;
+  plan_agent1?: QueryPlan;
+  plan_agent2?: QueryPlan;
   guardrails: Guardrails;
   warnings?: string[];
   error?: string;

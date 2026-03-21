@@ -1,0 +1,357 @@
+{
+  "fields": {
+    "gender": [
+      "gender",
+      "sex",
+      "male",
+      "female"
+    ],
+    "age": [
+      "age",
+      "age at diagnosis",
+      "years old"
+    ],
+    "race": [
+      "race",
+      "ethinicity",
+      "ethnic group",
+      "chinese",
+      "malay",
+      "indian"
+    ],
+    "stage": [
+      "stage",
+      "cancer_stage",
+      "ajcc_stage",
+      "pathologic_stage",
+      "staging",
+      "tnm stage"
+    ],
+    "mutation": [
+      "mutation",
+      "gene",
+      "gene mutation",
+      "BRAF",
+      "KRAS",
+      "NRAS",
+      "APC",
+      "mutated",
+      "wildtype"
+    ],
+    "grade": [
+      "grade",
+      "grading",
+      "differntiation",
+      "well differntiated",
+      "poorly differentiated"
+    ],
+    "diagnosis_year": [
+      "year",
+      "diagnosis year",
+      "over time",
+      "trend"
+    ],
+    "institution": [
+      "instution",
+      "hospital",
+      "centre",
+      "facility"
+    ],
+    "procedure": [
+      "proedure",
+      "surgery",
+      "surgical",
+      "operation",
+      "radiotheraphy",
+      "chemo",
+      "chemptherapy",
+      "treatment"
+    ],
+    "drug": [
+      "drug",
+      "medication"
+    ],
+    "death": [
+      "death",
+      "dead",
+      "deceased",
+      "mortality"
+    ],
+    "topology": [
+      "topology",
+      "topo",
+      "topological type",
+      "topo type",
+      "topo code",
+      "cancer",
+      "cancer site",
+      "primary site",
+      "diagnosis",
+      "rectum",
+      "colon",
+      "caesum"
+    ],
+    "histology": [
+      "histology",
+      "histo",
+      "histological type",
+      "histo type",
+      "histo code",
+      "tumor type",
+      "adenocarcinoma",
+      "signet ring",
+      "mucinous",
+      "carcinoma"
+    ],
+    "early_onset": [
+      "early onset",
+      "under 50",
+      "young patients"
+    ]
+  },
+  "values": {
+    "colorectal": [
+      "colorectal cancer",
+      "crc"
+    ],
+    "colon": [
+      "colon cancer",
+      "rectosigmoid"
+    ],
+    "rectum": [
+      "rectum",
+      "rectal cancer"
+    ],
+    "female": [
+      "female",
+      "woman",
+      "women",
+      "girls",
+      "f"
+    ],
+    "male": [
+      "male",
+      "man",
+      "men",
+      "boy",
+      "m"
+    ],
+    "BRAF": [
+      "braf",
+      "braf mutation"
+    ],
+    "KRAS": [
+      "kras",
+      "kras mutation"
+    ],
+    "NRAS": [
+      "nras",
+      "nras mutation"
+    ],
+    "APC": [
+      "apc",
+      "apc mutation"
+    ],
+    "stage": {
+      "early_stage": [
+        "stage i",
+        "stage 1",
+        "stage ii",
+        "stage 2"
+      ],
+      "advanced_stage": [
+        "stage iii",
+        "stage 3",
+        "stage iv",
+        "metastatic"
+      ]
+    },
+    "ncc": [
+      "ncc",
+      "nccs",
+      "national cancer centre",
+      "national cancer centre singapore",
+      "national cancer center"
+    ],
+    "sgh": [
+      "sgh",
+      "singapore general hospital"
+    ],
+    "skh": [
+      "skh",
+      "sengkang",
+      "sengkang general hospital"
+    ],
+    "cgh": [
+      "cgh",
+      "changi",
+      "changi general hospital"
+    ],
+    "kkh": [
+      "kkh",
+      "kk",
+      "kk women's and children's hospital",
+      "kk women's hospital"
+    ],
+    "nhc": [
+      "nhcs",
+      "nhc",
+      "national heart centre",
+      "national heart center"
+    ],
+    "c18.0": [
+      "cecum",
+      "caecum",
+      "cecal"
+    ],
+    "c18.1": [
+      "appendix",
+      "appendiceal"
+    ],
+    "c18.2": [
+      "ascending colon",
+      "right colon"
+    ],
+    "c18.3": [
+      "hepatic flexure"
+    ],
+    "c18.4": [
+      "transverse colon"
+    ],
+    "c18.5": [
+      "splenic flexure"
+    ],
+    "c18.6": [
+      "descending colon",
+      "left colon"
+    ],
+    "c18.7": [
+      "sigmoid colon",
+      "sigmoid"
+    ],
+    "c18.8": [
+      "overlapping colon",
+      "overlapping lesion"
+    ],
+    "c18.9": [
+      "colon cancer",
+      "colon"
+    ],
+    "c19": [
+      "rectosigmoid",
+      "rectosigmoid junction"
+    ],
+    "c20 / c20.9": [
+      "rectum",
+      "rectal cancer",
+      "rectal"
+    ],
+    "8140/3 (shown as 81403.0)": [
+      "adenocarcinoma",
+      "adenocarcinoma nos"
+    ],
+    "8480/3": [
+      "mucinous",
+      "mucinous adenocarcinoma"
+    ],
+    "8490/3": [
+      "signet ring",
+      "signet ring cell",
+      "signet ring cell carcinoma"
+    ],
+    "8263/3": [
+      "tubulovillous",
+      "tubulovillous adenoma"
+    ],
+    "Grade I": [
+      "grade 1",
+      "grade i",
+      "well differentiated"
+    ],
+    "Grade II": [
+      "grade 2",
+      "grade ii",
+      "moderately differentiated"
+    ],
+    "Grade III": [
+      "grade 3",
+      "grade iii",
+      "poorly differentiated",
+      "undifferentiated"
+    ],
+    "Grade/differentiation unknown, not stated, or not applicable": [
+      "unknown grade",
+      "not stated",
+      "not assessable"
+    ],
+    "Not a paired site": [
+      "not paired",
+      "not a paired site",
+      "single organ"
+    ],
+    "I": [
+      "stage i",
+      "stage 1"
+    ],
+    "II": [
+      "stage ii",
+      "stage 2"
+    ],
+    "IIA": [
+      "stage iia",
+      "stage 2a"
+    ],
+    "IIB": [
+      "stage iib",
+      "stage 2b"
+    ],
+    "IIC": [
+      "stage iic",
+      "stage 2c"
+    ],
+    "III": [
+      "stage iii",
+      "stage 3"
+    ],
+    "IIIA": [
+      "stage iiia",
+      "stage 3a"
+    ],
+    "IIIB": [
+      "stage iiib",
+      "stage 3b"
+    ],
+    "IIIC": [
+      "stage iiic",
+      "stage 3c"
+    ],
+    "IVA": [
+      "stage iva",
+      "stage 4a"
+    ],
+    "IVB": [
+      "stage ivb",
+      "stage 4b"
+    ],
+    "IVC": [
+      "stage ivc",
+      "stage 4c"
+    ],
+    "Stage Unknown": [
+      "unknown stage"
+    ],
+    "mutation detected": [
+      "mutated",
+      "positive",
+      "detected",
+      "mutation detected"
+    ],
+    "no mutation detected": [
+      "wildtype",
+      "negative",
+      "not detected",
+      "no mutation",
+      "wild type"
+    ]
+  }
+}

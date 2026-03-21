@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Message } from "@/lib/types";
-import { queryBackend } from "@/lib/api";
-import { MessageBubble } from "@/components/MessageBubble";
-import { ChatInput } from "@/components/ChatInput";
+import { Message } from "../../lib/types";
+import { queryBackend } from "../../lib/api";
+import { MessageBubble } from "../../components/MessageBubble";
+import { ChatInput } from "../../components/ChatInput";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -72,7 +72,8 @@ export default function ChatPage() {
           <MessageBubble
             key={message.id}
             message={message}
-            isUser={index % 2 === 0}
+            // debug: treat odd indices as user bubbles so the initial greeting sits on the left
+            isUser={index % 2 !== 0}
           />
         ))}
 
