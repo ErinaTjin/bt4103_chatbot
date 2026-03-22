@@ -235,6 +235,50 @@ class NL2SQLEngine:
             ]
         )
 
+    ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like", "or_like"}
+
+    def _validate_query_plan(self, summary: "Agent1ContextSummary") -> List[str]:
+        errors: List[str] = []
+        if not summary.intent_summary or not summary.intent_summary.strip():
+            errors.append("Required field 'intent' is missing: intent_summary is empty.")
+        if summary.extracted_filters is None:
+            errors.append("Required field 'filters' is missing.")
+        else:
+            for i, f in enumerate(summary.extracted_filters):
+                if not f.field or not f.field.strip():
+                    errors.append(f"filters[{i}].field is empty or missing.")
+                if not f.op or not f.op.strip():
+                    errors.append(f"filters[{i}].op is empty or missing.")
+                elif f.op.lower() not in self.ALLOWED_FILTER_OPS:
+                    errors.append(
+                        f"filters[{i}].op '{f.op}' is not a valid operator. "
+                        f"Allowed: {sorted(self.ALLOWED_FILTER_OPS)}"
+                    )
+                elif f.op.lower() in {"in", "or_like"} and not isinstance(f.value, list):
+                    errors.append(
+                        f"filters[{i}].op='{f.op}' requires value to be a list, "
+                        f"got {type(f.value).__name__}."
+                    )
+                if f.value is None:
+                    errors.append(f"filters[{i}].value is None.")
+        return errors
+
+    def _qualify_table_names(self, sql: str) -> str:
+        if not self.allowed_tables:
+            return sql
+        def replacer(match):
+            keyword = match.group(1)
+            table = match.group(2).strip('"')
+            if table.lower() in {t.lower() for t in self.allowed_tables}:
+                return f'{keyword} "anchor_view"."{table}"'
+            return match.group(0)
+        return re.sub(
+            r'\b(FROM|JOIN)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?',
+            replacer,
+            sql,
+            flags=re.IGNORECASE,
+        )
+
     def _validate_sql_shape(self, sql: str) -> str | None:
         candidate = sql.strip().rstrip(";").strip().lower()
         if not candidate:
@@ -385,6 +429,39 @@ class NL2SQLEngine:
                 plan_agent2=None,
             )
 
+        # QueryPlan validation — before SQL generation
+        plan_errors = self._validate_query_plan(agent1)
+        if plan_errors:
+            retry_question = (
+                user_query
+                + "\n\nPrevious attempt had validation issues: "
+                + "; ".join(plan_errors)
+                + ". Please ensure intent_summary is specific and all filters have valid field, op, and value."
+            )
+            agent1 = self.extractor.extract(
+                question=retry_question,
+                conversation_history=conversation_history,
+                active_filters=active_filters,
+            )
+            plan_errors = self._validate_query_plan(agent1)
+            if plan_errors:
+                agent1.validation_errors = plan_errors
+                return TranslationResult(
+                    sql="",
+                    plan={
+                        "intent_summary": agent1.intent_summary,
+                        "needs_clarification": False,
+                        "clarification_question": None,
+                        "active_filters": agent1.active_filters,
+                        "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
+                        "validation_errors": plan_errors,
+                    },
+                    valid=False,
+                    warnings=[f"QueryPlan validation failed: {e}" for e in plan_errors],
+                    plan_agent1=agent1.model_dump(),
+                    plan_agent2=None,
+                )
+
         schema_context = self._build_schema_context(
             relevant_only=True,
             hint=f"{user_query} {agent1.intent_summary}",
@@ -405,7 +482,7 @@ class NL2SQLEngine:
         # DEBUG 
         log.info("Agent2 output: %s", writer_output.model_dump())
 
-        sql = writer_output.sql.strip()
+        sql = self._qualify_table_names(writer_output.sql.strip())
         plan_agent2 = writer_output.model_dump()
 
         blocking_issues: List[str] = []
