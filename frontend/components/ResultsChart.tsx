@@ -109,22 +109,41 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         break;
 
       case "line":
+        const isMultiSeries = keys.length === 3;
+        const seriesKey = isMultiSeries ? keys[1] : null;
+        const lineMetric = isMultiSeries ? keys[2] : primaryMetric;
+
         spec = {
           ...spec,
           config: {
             ...spec.config,
-            axisY: { grid: true, gridDash: [3, 3] } // Y grid only
+            axisY: { grid: true, gridDash: [3, 3] }, // Y grid only
           },
           mark: { type: "line", point: true, tooltip: true, strokeWidth: 2 },
           encoding: {
-            x: { field: dimensionKey, type: "nominal", title: null },
-            y: { field: primaryMetric, type: "quantitative", title: null },
-            color: { value: COLORS[0] }, // Simplify to single color for single metric line
-            tooltip: [
-              { field: dimensionKey, type: "nominal" },
-              { field: primaryMetric, type: "quantitative" }
-            ]
-          }
+            x: { field: dimensionKey, type: "ordinal", title: null },
+            y: { field: lineMetric, type: "quantitative" as const, title: null },
+            ...(isMultiSeries
+              ? {
+                  color: {
+                    field: seriesKey,
+                    type: "nominal" as const,
+                    scale: { range: COLORS },
+                  },
+                  tooltip: [
+                    { field: dimensionKey, type: "ordinal" },
+                    { field: seriesKey, type: "nominal" },
+                    { field: lineMetric, type: "quantitative" },
+                  ],
+                } 
+              : {
+                  color: { value: COLORS[0] },
+                    tooltip: [
+                      { field: dimensionKey, type: "nominal" },
+                      { field: lineMetric, type: "quantitative" },
+                    ],
+                }),
+          },
         };
         break;
 
@@ -214,7 +233,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             </div>
           </div>
         );
-      }
+        break;
 
       case "bar":
       default: {

@@ -77,7 +77,9 @@ class Agent2QueryPlanResolver:
         
         try:
             return Agent2SQLWriterOutput.model_validate_json(self._clean_json(raw))
-        except (ValidationError, json.JSONDecodeError):
+        except (ValidationError, json.JSONDecodeError) as e:
+            # DEBUG 
+            log.error("Agent2 parse error: %s", e)
             retry_prompt = (
                 prompt
                 + "\nIMPORTANT: Output ONLY valid JSON with keys sql/reasoning_summary/assumptions/warnings."
