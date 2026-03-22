@@ -512,6 +512,39 @@ class NL2SQLEngine:
                 plan_agent2=None,
             )
 
+        # QueryPlan validation — before SQL generation
+        plan_errors = self._validate_query_plan(agent1)
+        if plan_errors:
+            retry_question = (
+                user_query
+                + "\n\nPrevious attempt had validation issues: "
+                + "; ".join(plan_errors)
+                + ". Please ensure intent_summary is specific and all filters have valid field, op, and value."
+            )
+            agent1 = self.extractor.extract(
+                question=retry_question,
+                conversation_history=conversation_history,
+                active_filters=active_filters,
+            )
+            plan_errors = self._validate_query_plan(agent1)
+            if plan_errors:
+                agent1.validation_errors = plan_errors
+                return TranslationResult(
+                    sql="",
+                    plan={
+                        "intent_summary": agent1.intent_summary,
+                        "needs_clarification": False,
+                        "clarification_question": None,
+                        "active_filters": agent1.active_filters,
+                        "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
+                        "validation_errors": plan_errors,
+                    },
+                    valid=False,
+                    warnings=[f"QueryPlan validation failed: {e}" for e in plan_errors],
+                    plan_agent1=agent1.model_dump(),
+                    plan_agent2=None,
+                )
+
         schema_context = self._build_schema_context(
             relevant_only=True,
             hint=f"{user_query} {agent1.intent_summary}",
@@ -532,7 +565,7 @@ class NL2SQLEngine:
         # DEBUG 
         log.info("Agent2 output: %s", writer_output.model_dump())
 
-        sql = writer_output.sql.strip()
+        sql = self._qualify_table_names(writer_output.sql.strip())
         sql = self._fix_concat_comma(sql)
         plan_agent2 = writer_output.model_dump()
 

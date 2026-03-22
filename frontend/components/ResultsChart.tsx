@@ -2,7 +2,7 @@
 
 import React, { Component, ReactNode } from "react";
 import { VegaEmbed } from "react-vega";
-import { DataRow } from "../lib/types";
+import { DataRow } from "@/lib/types";
 import { AlertCircle } from "lucide-react";
 
 const COLORS = [
@@ -45,7 +45,7 @@ class ChartErrorBoundary extends Component<
 
 interface ResultsChartProps {
   data: DataRow[];
-  type: "bar" | "line" | "pie" | "metric" | string;
+  type: "bar" | "line" | "pie" | "stacked" | "metric" | string;
 }
 
 export function ResultsChart({ data, type }: ResultsChartProps) {
@@ -67,25 +67,25 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
 
   const renderChart = () => {
     let spec: any = {
-      $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
       data: { values: data },
       width: "container",
       height: "container",
       autosize: { type: "fit", contains: "padding" },
       background: "transparent",
       config: {
-        view: { stroke: "transparent" }, 
+        view: { stroke: "transparent" },
         axis: {
-          grid: false, // matches false cartesian grid
-          domain: false, // equivalent to axisLine={false}
-          ticks: false, // equivalent to tickLine={false}
-          labelPadding: 10, // roughly equivalent to dy={10}
+          grid: false,           // matches false cartesian grid
+          domain: false,         // equivalent to axisLine={false}
+          ticks: false,          // equivalent to tickLine={false}
+          labelPadding: 10,      // roughly equivalent to dy={10}
         },
         legend: {
           orient: "bottom",
           title: null,
-        },
-      },
+        }
+      }
     };
 
     switch (type) {
@@ -98,52 +98,33 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             color: {
               field: dimensionKey,
               type: "nominal",
-              scale: { range: COLORS },
+              scale: { range: COLORS }
             },
             tooltip: [
               { field: dimensionKey, type: "nominal" },
-              { field: primaryMetric, type: "quantitative" },
-            ],
-          },
+              { field: primaryMetric, type: "quantitative" }
+            ]
+          }
         };
         break;
 
       case "line":
-        const isMultiSeries = keys.length === 3;
-        const seriesKey = isMultiSeries ? keys[1] : null;
-        const lineMetric = isMultiSeries ? keys[2] : primaryMetric;
-
         spec = {
           ...spec,
           config: {
             ...spec.config,
-            axisY: { grid: true, gridDash: [3, 3] }, // Y grid only
+            axisY: { grid: true, gridDash: [3, 3] } // Y grid only
           },
           mark: { type: "line", point: true, tooltip: true, strokeWidth: 2 },
           encoding: {
-            x: { field: dimensionKey, type: "ordinal", title: null },
-            y: { field: lineMetric, type: "quantitative" as const, title: null },
-            ...(isMultiSeries
-              ? {
-                  color: {
-                    field: seriesKey,
-                    type: "nominal" as const,
-                    scale: { range: COLORS },
-                  },
-                  tooltip: [
-                    { field: dimensionKey, type: "ordinal" },
-                    { field: seriesKey, type: "nominal" },
-                    { field: lineMetric, type: "quantitative" },
-                  ],
-                } 
-              : {
-                  color: { value: COLORS[0] },
-                    tooltip: [
-                      { field: dimensionKey, type: "nominal" },
-                      { field: lineMetric, type: "quantitative" },
-                    ],
-                }),
-          },
+            x: { field: dimensionKey, type: "nominal", title: null },
+            y: { field: primaryMetric, type: "quantitative", title: null },
+            color: { value: COLORS[0] }, // Simplify to single color for single metric line
+            tooltip: [
+              { field: dimensionKey, type: "nominal" },
+              { field: primaryMetric, type: "quantitative" }
+            ]
+          }
         };
         break;
 
@@ -233,6 +214,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             </div>
           </div>
         );
+      }
 
       case "bar":
       default: {
@@ -250,7 +232,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           const colorDim = dimensionKeys[1];
           const metric = numericKeys[0] ?? primaryMetric;
 
-        spec = {
+          spec = {
             ...spec,
             config: {
               ...spec.config,
