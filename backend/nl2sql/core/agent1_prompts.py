@@ -30,9 +30,10 @@ Rules:
 - Output JSON only.
 - Keep this lightweight: summarize intent and extract likely filters.
 - Reuse active filters as-is in active_filters.
-- Use intent='distribution' when the question asks for a breakdown, grouping, or 
-  'by X' pattern — even if the word 'how many' is used. 
-  e.g. 'how many patients by cancer type' = distribution, not count.
+- Use intent='distribution' when the question asks for a breakdown using 'by X', 'for each X', or 'per X'. 
+  e.g. 'how many patients by gender' = distribution. 
+- Use intent='count' when a filter is applied to get a single number. 
+  e.g. 'how many female patients have KRAS mutations' = count (female is a filter, not a grouping).
 - 'What are the total deaths and their proportion?' → intent='count' (two scalar metrics, not a breakdown)"
 - Use intent='count' only when a single aggregate number is expected.
 - If the ask is ambiguous, set needs_clarification=true with a short clarification_question.

@@ -65,8 +65,154 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
     primaryMetric = metricKeys[0];
   }
 
+  // Detect single-row wide format with percentage pairs
+  // e.g. {total_tested_patients, patients_with_kras, kras_percentage, ...}
+  // Transform to long format for bar chart with percentage labels
+  const isSingleRowWide = data.length === 1 && keys.length > 3;
+  const pctKeys = keys.filter(k =>
+    k.endsWith("_percentage") || k.endsWith("_pct") || k.endsWith("_proportion")
+  );
+  const totalKey = keys.find(k => k.startsWith("total_"));
+
   const renderChart = () => {
-    let spec: any = {
+
+    // Fallback: single row, single column → always metric card regardless of type
+    // agent1 ten
+    if (data.length === 1 && keys.length === 1) {
+      const value = data[0][keys[0]];
+      return (
+        <div className="flex items-center justify-center w-full h-64 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-8">
+          <div className="text-center">
+            <p className="text-sm text-gray-500 uppercase tracking-widest font-semibold mb-4">
+              Result
+            </p>
+            <p className="text-6xl font-bold text-blue-600 mb-2">
+              {typeof value === "number" ? value.toLocaleString() : value}
+            </p>
+            <p className="text-xs text-gray-400 uppercase tracking-widest">
+              {keys[0].replace(/_/g, " ")}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Wide-to-long transform (mutation prevalence / multi-attribute pivot) ---
+    if (isSingleRowWide && pctKeys.length > 1 && type === "metric") {
+      const longData = pctKeys.map(pctKey => {
+        const label = pctKey
+          .replace(/_percentage$|_pct$|_proportion$/, "")
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, c => c.toUpperCase());
+
+        // Extract base name to find paired count key
+        // e.g. kras_percentage → kras → finds patients_with_kras
+        const baseName = pctKey.replace(/_percentage$|_pct$|_proportion$/, "");
+
+        const countKey = keys.find(k =>
+          k !== pctKey &&
+          k !== totalKey &&
+          !k.endsWith("_percentage") &&
+          !k.endsWith("_pct") &&
+          !k.endsWith("_proportion") &&
+          !k.startsWith("total_") &&
+          (k.endsWith(`_${baseName}`) || k.includes(`_${baseName}_`) || k === baseName)
+        );
+
+        return {
+          attribute: label,
+          patient_count: countKey ? (data[0][countKey] as number) : 0,
+          percentage: data[0][pctKey] as number,
+        };
+      });
+
+      const totalValue = totalKey ? (data[0][totalKey] as number) : null;
+
+      const wideSpec = {
+        $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+        data: { values: longData },
+        width: "container" as const,
+        height: "container" as const,
+        background: "transparent",
+        layer: [
+          {
+            mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
+            encoding: {
+              x: {
+                field: "attribute",
+                type: "nominal",
+                title: null,
+                axis: { labelAngle: 0 },
+              },
+              y: {
+                field: "patient_count",
+                type: "quantitative",
+                title: "Patient Count",
+                axis: { titleColor: COLORS[0] },
+              },
+              color: {
+                field: "attribute",
+                type: "nominal",
+                scale: { range: COLORS },
+                legend: null,
+              },
+              tooltip: [
+                { field: "attribute", type: "nominal" },
+                { field: "patient_count", type: "quantitative", title: "Patients" },
+                { field: "percentage", type: "quantitative", title: "%" },
+              ],
+            },
+          },
+          {
+            mark: {
+              type: "text",
+              align: "center",
+              baseline: "bottom",
+              dy: -5,
+              fontSize: 11,
+              fontWeight: "bold",
+            },
+            encoding: {
+              x: { field: "attribute", type: "nominal" },
+              y: { field: "patient_count", type: "quantitative" },
+              text: { field: "percentage", type: "quantitative", format: ".1f" },
+              color: { value: "#666" },
+            },
+          },
+        ],
+        config: {
+          view: { stroke: "transparent" },
+          axis: { grid: false, domain: false, ticks: false, labelPadding: 10 },
+        },
+      };
+
+      return (
+        <div className="w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm overflow-hidden">
+          {totalKey && (
+            <div className="text-center mb-2">
+              <span className="text-xs text-gray-500 uppercase tracking-widest font-semibold">
+                {totalKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}:
+              </span>
+              <span className="text-sm font-bold text-blue-600 ml-2">
+                {totalValue?.toLocaleString()}
+              </span>
+            </div>
+          )}
+          <div className="w-full h-56">
+            <ChartErrorBoundary fallbackData={data}>
+              <VegaEmbed
+                spec={wideSpec}
+                options={{ actions: false }}
+                style={{ width: "100%", height: "100%" }}
+              />
+            </ChartErrorBoundary>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Standard chart types ---
+    let spec: Record<string, unknown> = {
       $schema: "https://vega.github.io/schema/vega-lite/v6.json",
       data: { values: data },
       width: "container",
@@ -76,16 +222,16 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       config: {
         view: { stroke: "transparent" },
         axis: {
-          grid: false,           // matches false cartesian grid
-          domain: false,         // equivalent to axisLine={false}
-          ticks: false,          // equivalent to tickLine={false}
-          labelPadding: 10,      // roughly equivalent to dy={10}
+          grid: false,
+          domain: false,
+          ticks: false,
+          labelPadding: 10,
         },
         legend: {
           orient: "bottom",
           title: null,
-        }
-      }
+        },
+      },
     };
 
     switch (type) {
@@ -116,7 +262,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         spec = {
           ...spec,
           config: {
-            ...spec.config,
+            ...(spec.config as object),
             axisY: { grid: true, gridDash: [3, 3] }, // Y grid only
           },
           mark: { type: "line", point: true, tooltip: true, strokeWidth: 2 },
@@ -155,7 +301,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         spec = {
           ...spec,
           config: {
-            ...spec.config,
+            ...(spec.config as object),
             axisY: { grid: true, gridDash: [3, 3] },
           },
           mark: { type: "bar", tooltip: true },
@@ -173,46 +319,6 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
               { field: stackMetric, type: "quantitative" },
             ],
           },
-          layer: [
-            {
-              mark: {
-                type: "line",
-                strokeWidth: 2.5,
-                color: COLORS[0],
-                interpolate: "monotone",
-              },
-              encoding: {
-                x: {
-                  field: dimensionKey,
-                  type: "ordinal",
-                  title: null,
-                  axis: { labelAngle: -30 },
-                },
-                y: {
-                  field: primaryMetric,
-                  type: "quantitative",
-                  title: null,
-                  scale: { zero: false },
-                },
-              },
-            },
-            {
-              mark: {
-                type: "point",
-                filled: true,
-                size: 60,
-                color: COLORS[0],
-              },
-              encoding: {
-                x: { field: dimensionKey, type: "ordinal" },
-                y: { field: primaryMetric, type: "quantitative" },
-                tooltip: [
-                  { field: dimensionKey, type: "ordinal", title: dimensionKey.replace(/_/g, " ") },
-                  { field: primaryMetric, type: "quantitative", title: primaryMetric.replace(/_/g, " ") },
-                ],
-              },
-            },
-          ],
         };
         break;
 
@@ -279,7 +385,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           spec = {
             ...spec,
             config: {
-              ...spec.config,
+              ...(spec.config as object),
               axisY: { grid: true, gridDash: [3, 3] },
             },
             mark: { type: "bar", tooltip: true, cornerRadiusEnd: 3 },
@@ -318,7 +424,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           spec = {
             ...spec,
             config: {
-              ...spec.config,
+              ...(spec.config as object),
               axisY: { grid: true, gridDash: [3, 3] },
             },
             mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
@@ -354,8 +460,15 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
     );
   };
 
+  // Use h-auto for wide-to-long charts so they aren't clipped
+  const isWideToLong = isSingleRowWide && pctKeys.length > 1 && type === "metric";
+
   return (
-    <div className="w-full h-64 mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm overflow-hidden">
+    <div
+      className={`w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm overflow-hidden ${
+        isWideToLong ? "h-auto" : "h-64"
+      }`}
+    >
       {renderChart()}
     </div>
   );

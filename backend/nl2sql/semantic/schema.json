@@ -103,7 +103,7 @@
         {
           "name": "procedure_source_value",
           "type": "str",
-          "description": "free-text description of the surgery or radiotherapy technique."
+          "description": "free-text description of surgery or radiotherapy. Values are uppercase. For liver resection use OR conditions: procedure_source_value LIKE '%LIVER%LOBECTOMY%' OR LIKE '%LIVER%WEDGE%' OR LIKE '%LIVER%SEGMENTAL%' OR LIKE '%LIVER%EXCISION%'. Do NOT match non-liver procedures. Always include LIVER in the LIKE pattern to avoid matching lung or other organ procedures."
         },
         {
           "name": "TOSP",
@@ -144,7 +144,7 @@
         {
           "name": "measurement_concept_name",
           "type": "str",
-          "description": "Type of measurement. ALWAYS add a WHERE filter on this column. All 14 distinct values in data: 'BRAF Mutation Conclusion', 'KRAS Mutation Conclusion', 'NRAS Mutation Conclusion', 'APC Mutation Conclusion', 'Grade', 'Laterality', 'TNM Clin Stage Group', 'TNM Clin T', 'TNM Clin N', 'TNM Clin M', 'TNM Path Stage Group', 'TNM Path T', 'TNM Path N', 'TNM Path M'. NEVER use short names like 'KRAS' or 'BRAF' — always use full names like 'KRAS Mutation Conclusion'. For staging questions: ALWAYS use BOTH 'TNM Path Stage Group' AND 'TNM Clin Stage Group' together with a COALESCE pattern — prefer path stage per patient, fall back to clin stage if null. Use a CTE to get one stage per patient first, then aggregate. Never filter one stage type alone for a general staging question. For mutation questions: use op='in' with full names e.g. value=['KRAS Mutation Conclusion', 'BRAF Mutation Conclusion', 'NRAS Mutation Conclusion']. Always also filter value_as_concept_name = 'mutation detected' unless the question asks about both detected and not detected. For 'among patients who were tested' questions: denominator = patients who have any record in measurement_mutation for that mutation concept name regardless of result — NOT all colorectal patients. For grade use 'Grade', for laterality use 'Laterality'."
+          "description": "Type of measurement. ALWAYS filter this column before reading value_as_concept_name. Only 14 valid values exist in the data — NEVER use anything else:\n\nMUTATIONS (always use full name with 'Mutation Conclusion' suffix):\n- 'KRAS Mutation Conclusion', 'BRAF Mutation Conclusion', 'NRAS Mutation Conclusion', 'APC Mutation Conclusion'\n- NEVER use short names like 'KRAS', 'BRAF', 'NRAS'\n- For mutations always also filter value_as_concept_name = 'mutation detected' unless question asks about both detected and not detected\n- For multiple mutations use op='in' with a list, NEVER op='='\n- For 'among tested patients': denominator = patients with ANY record for that concept name regardless of value_as_concept_name\n\nSTAGING:\n- For general staging ALWAYS use BOTH 'TNM Path Stage Group' AND 'TNM Clin Stage Group' with COALESCE (prefer path, fallback to clin) using a CTE\n- NEVER filter on one stage type alone unless explicitly requested\n- Stage values in value_as_concept_name: 'I', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'\n- For T/N/M components use: 'TNM Clin T', 'TNM Clin N', 'TNM Clin M', 'TNM Path T', 'TNM Path N', 'TNM Path M'\n\nOTHER:\n- Grade: use 'Grade' with value_as_concept_name IN ('Grade I', 'Grade II', 'Grade III')\n- Laterality: use 'Laterality'"
         },
         {
           "name": "measurement_date",
@@ -154,7 +154,7 @@
         {
           "name": "value_as_concept_name",
           "type": "str",
-          "description": "result of the measurement. Stage values are substages: 'I', 'II', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'. To group into Roman numeral stages use CASE WHEN raw_stage = 'I' THEN 'I' WHEN raw_stage LIKE 'III%' THEN 'III' WHEN raw_stage LIKE 'II%' THEN 'II' WHEN raw_stage LIKE 'IV%' THEN 'IV' ELSE 'Unknown' END. Note: TNM Clin Stage Group only has values I, III, IIIB, IIIC, IVA, IVB, IVC, Stage Unknown — it is missing II and some substages. Mutation values: 'mutation detected', 'no mutation detected'. Grade values: 'Grade I', 'Grade II', 'Grade III', 'Grade/differentiation unknown, not stated, or not applicable'."
+          "description": "result of the measurement. Stage values are substages: 'I', 'II', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'. To group into Roman numeral stages use CASE WHEN raw_stage = 'I' THEN 'I' WHEN raw_stage LIKE 'III%' THEN 'III' WHEN raw_stage LIKE 'II%' THEN 'II' WHEN raw_stage LIKE 'IV%' THEN 'IV' ELSE 'Unknown' END. Note: TNM Clin Stage Group only has values I, III, IIIB, IIIC, IVA, IVB, IVC, Stage Unknown — it is missing II and some substages. Mutation values: 'mutation detected', 'no mutation detected' ; Wild type = 'no mutation detected' — NEVER use 'wildtype' or 'wild-type' as these are not valid values. Grade values: 'Grade I', 'Grade II', 'Grade III', 'Grade/differentiation unknown, not stated, or not applicable'."
         },
         {
           "name": "value_source_value",
@@ -206,12 +206,12 @@
         {
           "name": "drug_source_value",
           "type": "str",
-          "description": "prescribed drug identifier combining NDC code and Gemscript code. Use ATC column for drug class filtering; use this column for specific drug name filtering."
+          "description": "prescribed drug identifier stored as: NDC_code||drug_name. Use LIKE to filter by drug name. Examples: cetuximab (Erbitux) LIKE '%cetuximab%' OR LIKE '%ERBITUX%', panitumumab (Vectibix) LIKE '%panitumumab%' OR LIKE '%VECTIBIX%'. For anti-EGFR therapy filter: drug_source_value LIKE '%cetuximab%' OR drug_source_value LIKE '%panitumumab%' OR drug_source_value LIKE '%ERBITUX%' OR drug_source_value LIKE '%VECTIBIX%'."
         },
         {
           "name": "ATC",
           "type": "str",
-          "description": "ATC (Anatomical Therapeutic Chemical) classification code for the drug. Use for filtering by drug class (e.g. op='like' with '%L01%' for antineoplastic agents, '%L01XA%' for platinum compounds, '%L01BC%' for fluoropyrimidines like capecitabine/5-FU)."
+          "description": "ATC classification code. Anti-EGFR drugs: cetuximab=L01FE01, panitumumab=L01FE02. For all anti-EGFR therapy use op='like' with '%L01FE%'. For antineoplastic agents use '%L01%'."
         },
         {
           "name": "drug_strength",
@@ -241,7 +241,7 @@
         {
           "name": "drug_exposure_start_date",
           "type": "date",
-          "description": "start date of the drug prescription/administration."
+          "description": "start date of drug prescription. NOTE: may contain NULL values — when question says to include missing dates or assume drug was given, do NOT filter out NULL dates. Include all records regardless of whether drug_exposure_start_date is NULL."
         },
         {
           "name": "drug_exposure_end_date",
