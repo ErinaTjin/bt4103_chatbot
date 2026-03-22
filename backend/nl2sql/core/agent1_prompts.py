@@ -30,6 +30,10 @@ Rules:
 - Output JSON only.
 - Keep this lightweight: summarize intent and extract likely filters.
 - Reuse active filters as-is in active_filters.
+- Use intent='distribution' when the question asks for a breakdown, grouping, or 
+  'by X' pattern — even if the word 'how many' is used. 
+  e.g. 'how many patients by cancer type' = distribution, not count.
+- Use intent='count' only when a single aggregate number is expected.
 - If the ask is ambiguous, set needs_clarification=true with a short clarification_question.
 - Never output SQL.
 """

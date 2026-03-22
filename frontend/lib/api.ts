@@ -6,11 +6,16 @@ const BACKEND_URL = 'http://localhost:8000';
 export async function queryBackend(message: string): Promise<QueryResponse> {
   console.log('[API] Sending query:', message);
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 200000); // 200s for slow local LLM
+
   const response = await fetch(`${BACKEND_URL}/nl2sql/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question: message }),
+    signal: controller.signal,
   });
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     console.error('[API] Backend error:', response.status, response.statusText);

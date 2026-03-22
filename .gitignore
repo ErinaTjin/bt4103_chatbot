@@ -16,6 +16,4 @@ venv/
 *.parquet
 *.duckdb
 *.db
-
-# Node modules
-node_modules/
+*.wal

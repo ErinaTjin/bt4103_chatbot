@@ -10,6 +10,7 @@ from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
 # DEBUG
 import logging
 log = logging.getLogger(__name__)
+log.info("=== engine.py loaded ===")
 
 class TranslationResult:
     def __init__(
@@ -221,6 +222,73 @@ class NL2SQLEngine:
                 "WHERE co.ICD10 IN ('C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20')",
                 "GROUP BY age_group, age_group_start",
                 "ORDER BY age_group_start;",
+                "",
+                "6) Cancer types and patients breakdown by ICD10:",
+                "-- When asked 'how many cancer types and patients', always return a breakdown by ICD10:",
+                "SELECT co.ICD10, COUNT(DISTINCT co.person_id) AS distinct_patients",
+                "FROM \"anchor_view\".\"condition_occurrence\" AS co",
+                "GROUP BY co.ICD10",
+                "ORDER BY distinct_patients DESC;",
+                "",
+                "7) Early onset filter (age at diagnosis <= 49):",
+                "-- Use this pattern for ANY cancer type, replacing the ICD10 filter as needed", 
+                "SELECT COUNT(DISTINCT p.person_id) AS case_count",
+                "FROM \"anchor_view\".\"person\" AS p",
+                "INNER JOIN \"anchor_view\".\"condition_occurrence\" AS co ON p.person_id = co.person_id",
+                "WHERE co.ICD10 IN (<relevant_ICD10_codes>)",
+                " AND co.condition_start_date >= 'YYYY-01-01'", 
+                " AND co.condition_start_date <= 'YYYY-12-31'","AND YEAR(co.condition_start_date) - p.year_of_birth <= 49;",
+                "",
+                "8) Age group breakdown filtered by any dimension (combined pattern):",
+                "-- Use this pattern when combining age groups with ANY filter (stage, gender, mutation etc.)",
+                "-- Replace <stage_filter> with the relevant filter value e.g. 'IV', 'Male', 'mutation detected'",
+                "-- Replace <ICD10_codes> with relevant codes",
+                "WITH stage_per_patient AS (",
+                "    SELECT co.person_id,",
+                "        COALESCE(",
+                "            MAX(CASE WHEN m.measurement_concept_name = 'TNM Path Stage Group' THEN m.value_as_concept_name END),",
+                "            MAX(CASE WHEN m.measurement_concept_name = 'TNM Clin Stage Group' THEN m.value_as_concept_name END)",
+                "        ) AS raw_stage",
+                "    FROM \"anchor_view\".\"condition_occurrence\" AS co",
+                "    JOIN \"anchor_view\".\"measurement_mutation\" AS m ON co.person_id = m.person_id",
+                "    WHERE co.ICD10 IN (<ICD10_codes>)",
+                "    AND m.measurement_concept_name IN ('TNM Path Stage Group', 'TNM Clin Stage Group')",
+                "    GROUP BY co.person_id",
+                "),",
+                "stage_grouped AS (",
+                "    SELECT person_id,",
+                "        CASE WHEN raw_stage = 'I' THEN 'I'",
+                "             WHEN raw_stage LIKE 'III%' THEN 'III'",
+                "             WHEN raw_stage LIKE 'II%' THEN 'II'",
+                "             WHEN raw_stage LIKE 'IV%' THEN 'IV'",
+                "             ELSE 'Unknown' END AS stage",
+                "    FROM stage_per_patient",
+                "    WHERE raw_stage IS NOT NULL AND raw_stage != 'Stage Unknown'",
+                "),",
+                "-- CRITICAL: always include person_id in this CTE for joining",
+                "patient_age_stage AS (",
+                "    SELECT",
+                "        p.person_id,",
+                "        CONCAT(",
+                "            CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER),",
+                "            '-',",
+                "            CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 + 4 AS INTEGER)",
+                "        ) AS age_group,",
+                "        CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER) AS age_group_start,",
+                "        p.gender_source_value,",
+                "        sg.stage",
+                "    FROM \"anchor_view\".\"person\" AS p",
+                "    INNER JOIN \"anchor_view\".\"condition_occurrence\" AS co ON p.person_id = co.person_id",
+                "    INNER JOIN stage_grouped AS sg ON p.person_id = sg.person_id",
+                "    WHERE co.ICD10 IN (<ICD10_codes>)",
+                ")",
+                "-- Filter by the relevant dimension in WHERE clause",
+                "SELECT age_group, COUNT(DISTINCT person_id) AS case_count",
+                "FROM patient_age_stage",
+                "WHERE stage = '<stage_filter>'",
+                "-- OR: WHERE gender_source_value = '<gender_filter>'",
+                "GROUP BY age_group, age_group_start",
+                "ORDER BY case_count DESC;",
             ]
         )
 
@@ -233,6 +301,50 @@ class NL2SQLEngine:
                 "- Do not use DDL/DML keywords (INSERT/UPDATE/DELETE/CREATE/DROP/ALTER/TRUNCATE).",
                 "- Keep LIMIT <= 1000.",
             ]
+        )
+    
+    ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like", "or_like"}
+
+    def _validate_query_plan(self, summary: "Agent1ContextSummary") -> List[str]:
+        errors: List[str] = []
+        if not summary.intent_summary or not summary.intent_summary.strip():
+            errors.append("Required field 'intent' is missing: intent_summary is empty.")
+        if summary.extracted_filters is None:
+            errors.append("Required field 'filters' is missing.")
+        else:
+            for i, f in enumerate(summary.extracted_filters):
+                if not f.field or not f.field.strip():
+                    errors.append(f"filters[{i}].field is empty or missing.")
+                if not f.op or not f.op.strip():
+                    errors.append(f"filters[{i}].op is empty or missing.")
+                elif f.op.lower() not in self.ALLOWED_FILTER_OPS:
+                    errors.append(
+                        f"filters[{i}].op '{f.op}' is not a valid operator. "
+                        f"Allowed: {sorted(self.ALLOWED_FILTER_OPS)}"
+                    )
+                elif f.op.lower() in {"in", "or_like"} and not isinstance(f.value, list):
+                    errors.append(
+                        f"filters[{i}].op='{f.op}' requires value to be a list, "
+                        f"got {type(f.value).__name__}."
+                    )
+                if f.value is None:
+                    errors.append(f"filters[{i}].value is None.")
+        return errors
+
+    def _qualify_table_names(self, sql: str) -> str:
+        if not self.allowed_tables:
+            return sql
+        def replacer(match):
+            keyword = match.group(1)
+            table = match.group(2).strip('"')
+            if table.lower() in {t.lower() for t in self.allowed_tables}:
+                return f'{keyword} "anchor_view"."{table}"'
+            return match.group(0)
+        return re.sub(
+            r'\b(FROM|JOIN)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?',
+            replacer,
+            sql,
+            flags=re.IGNORECASE,
         )
 
     def _validate_sql_shape(self, sql: str) -> str | None:
@@ -348,6 +460,21 @@ class NL2SQLEngine:
 
         return blocking, advisory
 
+    def _fix_concat_comma(self, sql: str) -> str:
+        """
+        Fix missing comma after string literals in CONCAT.
+        LLM consistently drops the comma in patterns like:
+        CONCAT(CAST(...), '-' CAST(...))
+        should be:
+        CONCAT(CAST(...), '-', CAST(...))
+        """
+        fixed = re.sub(
+            r"('[^']*')\s*\n\s*(CAST\()",
+            r"\1,\n            \2",
+            sql
+        )
+        return fixed
+
     def translate(
         self,
         user_query: str,
@@ -406,6 +533,7 @@ class NL2SQLEngine:
         log.info("Agent2 output: %s", writer_output.model_dump())
 
         sql = writer_output.sql.strip()
+        sql = self._fix_concat_comma(sql)
         plan_agent2 = writer_output.model_dump()
 
         blocking_issues: List[str] = []
