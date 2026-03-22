@@ -51,13 +51,9 @@ interface ResultsChartProps {
 export function ResultsChart({ data, type }: ResultsChartProps) {
   if (!data || data.length === 0) return null;
 
-  // Identify keys for charting
-  // Typically, the first key is the dimension, and others are metrics
   const keys = Object.keys(data[0]);
   const metricKeys = keys.slice(1);
 
-  // For metric card (single value), use the first key as the metric
-  // For other charts, first key is dimension, rest are metrics
   let dimensionKey: string;
   let primaryMetric: string;
 
@@ -78,7 +74,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       autosize: { type: "fit", contains: "padding" },
       background: "transparent",
       config: {
-        view: { stroke: "transparent" }, // Removes default border
+        view: { stroke: "transparent" },
         axis: {
           grid: false,           // matches false cartesian grid
           domain: false,         // equivalent to axisLine={false}
@@ -158,6 +154,46 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
               { field: stackMetric, type: "quantitative" },
             ],
           },
+          layer: [
+            {
+              mark: {
+                type: "line",
+                strokeWidth: 2.5,
+                color: COLORS[0],
+                interpolate: "monotone",
+              },
+              encoding: {
+                x: {
+                  field: dimensionKey,
+                  type: "ordinal",
+                  title: null,
+                  axis: { labelAngle: -30 },
+                },
+                y: {
+                  field: primaryMetric,
+                  type: "quantitative",
+                  title: null,
+                  scale: { zero: false },
+                },
+              },
+            },
+            {
+              mark: {
+                type: "point",
+                filled: true,
+                size: 60,
+                color: COLORS[0],
+              },
+              encoding: {
+                x: { field: dimensionKey, type: "ordinal" },
+                y: { field: primaryMetric, type: "quantitative" },
+                tooltip: [
+                  { field: dimensionKey, type: "ordinal", title: dimensionKey.replace(/_/g, " ") },
+                  { field: primaryMetric, type: "quantitative", title: primaryMetric.replace(/_/g, " ") },
+                ],
+              },
+            },
+          ],
         };
         break;
 
@@ -178,32 +214,93 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             </div>
           </div>
         );
+      }
 
       case "bar":
-      default:
-        spec = {
-          ...spec,
-          config: {
-            ...spec.config,
-            axisY: { grid: true, gridDash: [3, 3] }
-          },
-          mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
-          encoding: {
-            x: { field: dimensionKey, type: "nominal", title: null, axis: { labelAngle: 0 } },
-            y: { field: primaryMetric, type: "quantitative", title: null },
-            color: {
-              field: dimensionKey,
-              type: "nominal",
-              scale: { range: COLORS },
-              legend: null
+      default: {
+        // Detect cohort comparison: 2+ dimension columns before the metric
+        // e.g. [gender, age_group, count_patients] → grouped bar chart
+        const numericKeys = keys.filter(
+          (k) => typeof data[0][k] === "number"
+        );
+        const dimensionKeys = keys.filter((k) => !numericKeys.includes(k));
+        const isGrouped = dimensionKeys.length >= 2;
+
+        if (isGrouped) {
+          // Grouped bar chart: x = first dimension, color = second dimension
+          const xDim = dimensionKeys[0];
+          const colorDim = dimensionKeys[1];
+          const metric = numericKeys[0] ?? primaryMetric;
+
+          spec = {
+            ...spec,
+            config: {
+              ...spec.config,
+              axisY: { grid: true, gridDash: [3, 3] },
             },
-            tooltip: [
-              { field: dimensionKey, type: "nominal" },
-              { field: primaryMetric, type: "quantitative" }
-            ]
-          }
-        };
+            mark: { type: "bar", tooltip: true, cornerRadiusEnd: 3 },
+            encoding: {
+              x: {
+                field: xDim,
+                type: "nominal",
+                title: null,
+                axis: { labelAngle: -30 },
+              },
+              xOffset: {
+                // side-by-side grouping within each x category
+                field: colorDim,
+                type: "nominal",
+              },
+              y: {
+                field: metric,
+                type: "quantitative",
+                title: null,
+              },
+              color: {
+                field: colorDim,
+                type: "nominal",
+                scale: { range: COLORS },
+                legend: { title: colorDim.replace(/_/g, " ") },
+              },
+              tooltip: [
+                { field: xDim, type: "nominal", title: xDim.replace(/_/g, " ") },
+                { field: colorDim, type: "nominal", title: colorDim.replace(/_/g, " ") },
+                { field: metric, type: "quantitative", title: metric.replace(/_/g, " ") },
+              ],
+            },
+          };
+        } else {
+          // Simple single-dimension bar chart (original behaviour)
+          spec = {
+            ...spec,
+            config: {
+              ...spec.config,
+              axisY: { grid: true, gridDash: [3, 3] },
+            },
+            mark: { type: "bar", tooltip: true, cornerRadiusEnd: 4 },
+            encoding: {
+              x: {
+                field: dimensionKey,
+                type: "nominal",
+                title: null,
+                axis: { labelAngle: -30 },
+              },
+              y: { field: primaryMetric, type: "quantitative", title: null },
+              color: {
+                field: dimensionKey,
+                type: "nominal",
+                scale: { range: COLORS },
+                legend: null,
+              },
+              tooltip: [
+                { field: dimensionKey, type: "nominal" },
+                { field: primaryMetric, type: "quantitative" },
+              ],
+            },
+          };
+        }
         break;
+      }
     }
 
     return (
