@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from nl2sql.core.llm_adapter import LLMAdapter
 from nl2sql.core.agent1_extractor import Agent1QueryPlanExtractor
 from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
+from nl2sql.core.models import Agent1ContextSummary
 
 # DEBUG
 import logging
@@ -305,7 +306,7 @@ class NL2SQLEngine:
     
     ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like", "or_like"}
 
-    def _validate_query_plan(self, summary: "Agent1ContextSummary") -> List[str]:
+    def _validate_query_plan(self, summary: Agent1ContextSummary) -> List[str]:
         errors: List[str] = []
         if not summary.intent_summary or not summary.intent_summary.strip():
             errors.append("Required field 'intent' is missing: intent_summary is empty.")

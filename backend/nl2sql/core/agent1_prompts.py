@@ -33,7 +33,13 @@ Rules:
 - Use intent='distribution' when the question asks for a breakdown, grouping, or 
   'by X' pattern — even if the word 'how many' is used. 
   e.g. 'how many patients by cancer type' = distribution, not count.
+- 'What are the total deaths and their proportion?' → intent='count' (two scalar metrics, not a breakdown)"
 - Use intent='count' only when a single aggregate number is expected.
 - If the ask is ambiguous, set needs_clarification=true with a short clarification_question.
 - Never output SQL.
+- Valid operators are ONLY: =, !=, >, <, >=, <=, in, like, or_like
+- NEVER use op='between' — it is not supported.
+  For year or date ranges always use TWO separate filters:
+  {{"field": "year", "op": ">=", "value": "2010"}},
+  {{"field": "year", "op": "<=", "value": "2020"}}
 """

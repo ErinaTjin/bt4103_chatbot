@@ -169,23 +169,23 @@
       ]
     },
 
-    "death": {
-      "description": "Death records for patients in the dataset. A record here means the patient has died — it does NOT mean they died from cancer specifically. cause_source_value may or may not be populated. For mortality questions: ALWAYS define the cancer patient cohort first using condition_occurrence, then LEFT JOIN death onto the cohort. This counts patients who died regardless of cause. Do NOT filter death_date by diagnosis year — apply date filters only to condition_start_date. For 'deaths among colorectal cancer patients': denominator = total colorectal patients in cohort, numerator = those with a non-null death_date. If user asks specifically about deaths CAUSED BY colorectal cancer, use cause_source_value filter and warn that this field may be incomplete.",
+    "death" : {
+      "description": "Death records for patients in the dataset. A record here means the patient has died — it does NOT mean they died from cancer specifically. cause_source_value may or may not be populated. For mortality questions: ALWAYS define the cancer patient cohort first using condition_occurrence, then LEFT JOIN death onto the cohort. This counts patients who died regardless of cause. Do NOT filter death_date by diagnosis year — apply date filters only to condition_start_date. For 'deaths among colorectal cancer patients': denominator = total colorectal patients in cohort, numerator = those with a non-null death_date. CRITICAL: the deaths CTE should SELECT directly FROM death table WHERE death_date IS NOT NULL — do NOT join person inside the deaths CTE. If user asks specifically about deaths CAUSED BY colorectal cancer, use cause_source_value filter and warn that this field may be incomplete.",
       "columns": [
         {
           "name": "person_id",
           "type": "int",
-          "description": "use to join to person"
+          "description": "use to join to person and to the cancer cohort CTE"
         },
         {
           "name": "death_date",
           "type": "date",
-          "description": "date of death. NULL means patient is still alive (or status unknown). To filter for deceased patients use: death_date IS NOT NULL."
+          "description": "date of death. NULL means patient is still alive (or status unknown). To filter for deceased patients use: death_date IS NOT NULL. Do NOT filter by year range — only use IS NOT NULL check."
         },
         {
           "name": "cause_source_value",
           "type": "str",
-          "description": "cause of death as recorded in source data."
+          "description": "cause of death as recorded in source data. May be NULL or incomplete — only use this field if user explicitly asks about cause of death."
         }
       ]
     },
