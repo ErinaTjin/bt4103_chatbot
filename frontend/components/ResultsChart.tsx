@@ -67,7 +67,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
 
   const renderChart = () => {
     let spec: any = {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      $schema: "https://vega.github.io/schema/vega-lite/v6.json",
       data: { values: data },
       width: "container",
       height: "container",
@@ -217,6 +217,31 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         break;
 
       case "metric":
+        // Handle multiple scalar metrics - show as side-by-side cards
+        if (keys.length > 1) {
+          return (
+            <div className="flex flex-wrap gap-4 items-center justify-center w-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-8">
+              {keys.map((key, i) => {
+                const val = data[0]?.[key] ?? 0;
+                return (
+                  <div key={key} className="text-center px-6">
+                    <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-2">
+                      {key.replace(/_/g, " ")}
+                    </p>
+                    <p className={`font-bold text-blue-600 mb-1 ${keys.length > 3 ? "text-3xl" : "text-5xl"}`}>
+                      {typeof val === "number"
+                        ? key.includes("proportion") || key.includes("pct") || key.includes("percentage")
+                          ? `${(val * (val <= 1 ? 100 : 1)).toFixed(1)}%`
+                          : val.toLocaleString()
+                        : val}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+        // Single metric - original behaviour
         const value = data[0]?.[primaryMetric] ?? 0;
         return (
           <div className="flex items-center justify-center w-full h-64 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 p-8">
