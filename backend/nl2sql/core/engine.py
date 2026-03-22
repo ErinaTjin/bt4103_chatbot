@@ -82,6 +82,7 @@ class NL2SQLEngine:
             for table_name, table in tables.items():
                 text_parts = [table_name, getattr(table, "description", "")]
                 text_parts.extend(c.name for c in table.columns)
+                text_parts.extend(c.description for c in table.columns if c.description)  # added to handle mutation, grade & laterality
                 blob = " ".join(text_parts).lower()
                 if any(token in blob for token in lower_hint.split() if len(token) > 2):
                     candidates.append(table_name)
@@ -211,19 +212,24 @@ class NL2SQLEngine:
                 "GROUP BY stage ORDER BY stage;",
                 "",
                 "5) Age at diagnosis grouping (5-year):",
-                "SELECT",
-                "    CONCAT(",
-                "        CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER),",
-                "        '-',",
-                "        CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 + 4 AS INTEGER)",
-                "    ) AS age_group,",
-                "    CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER) AS age_group_start",
-                "FROM \"anchor_view\".\"person\" AS p",
-                "INNER JOIN \"anchor_view\".\"condition_occurrence\" AS co ON p.person_id = co.person_id",
-                "WHERE co.ICD10 IN ('C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20')",
+                "-- Use CTE to ensure age_group_start is available for GROUP BY and ORDER BY",
+                "WITH age_groups AS (",
+                "    SELECT",
+                "        p.person_id,",
+                "        CONCAT(",
+                "            CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER),",
+                "            '-',",
+                "            CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 + 4 AS INTEGER)",
+                "        ) AS age_group,",
+                "        CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER) AS age_group_start",
+                "    FROM \"anchor_view\".\"person\" AS p",
+                "    INNER JOIN \"anchor_view\".\"condition_occurrence\" AS co ON p.person_id = co.person_id",
+                "    WHERE co.ICD10 IN ('C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20')",
+                ")",
+                "SELECT age_group, COUNT(DISTINCT person_id) AS case_count",
+                "FROM age_groups",
                 "GROUP BY age_group, age_group_start",
                 "ORDER BY age_group_start;",
-                "",
                 "6) Cancer types and patients breakdown by ICD10:",
                 "-- When asked 'how many cancer types and patients', always return a breakdown by ICD10:",
                 "SELECT co.ICD10, COUNT(DISTINCT co.person_id) AS distinct_patients",
@@ -290,6 +296,80 @@ class NL2SQLEngine:
                 "-- OR: WHERE gender_source_value = '<gender_filter>'",
                 "GROUP BY age_group, age_group_start",
                 "ORDER BY case_count DESC;",
+                "",
+                "9) Multi-attribute prevalence pivot pattern (use for mutations, grades, or any EAV breakdown):",
+                "-- Use this pattern when question asks for prevalence/count/percentage of MULTIPLE attributes separately",
+                "-- Replace <attribute_1>, <attribute_2> etc. with full measurement_concept_name values",
+                "-- Replace <result_value> with value_as_concept_name to check e.g. 'mutation detected'",
+                "-- Replace <ICD10_codes> with relevant codes",
+                "-- Denominator = patients tested for ANY of the attributes, NOT all cohort patients",
+                "WITH cohort_tested AS (",
+                "    -- CRITICAL: measurement_concept_name filter here controls the denominator",
+                "    -- removing this filter will inflate total_tested_patients with non-mutation records"
+                "    SELECT DISTINCT co.person_id",
+                "    FROM \"anchor_view\".\"condition_occurrence\" AS co",
+                "    INNER JOIN \"anchor_view\".\"measurement_mutation\" AS m ON co.person_id = m.person_id",
+                "    WHERE co.ICD10 IN (<ICD10_codes>)",
+                "    AND m.measurement_concept_name IN ( -- DO NOT REMOVE THIS LINE",
+                "        '<attribute_1>',",
+                "        '<attribute_2>',",
+                "        '<attribute_3>'",
+                "    )",
+                "),",
+                "attribute_results AS (",
+                "    -- Step 2: pivot — one flag column per attribute per patient",
+                "    -- ALWAYS use MAX(CASE WHEN...) pattern, one per attribute",
+                "    SELECT",
+                "        m.person_id,",
+                "        MAX(CASE WHEN m.measurement_concept_name = '<attribute_1>'",
+                "            AND m.value_as_concept_name = '<result_value>' THEN 1 ELSE 0 END) AS has_attr1,",
+                "        MAX(CASE WHEN m.measurement_concept_name = '<attribute_2>'",
+                "            AND m.value_as_concept_name = '<result_value>' THEN 1 ELSE 0 END) AS has_attr2,",
+                "        MAX(CASE WHEN m.measurement_concept_name = '<attribute_3>'",
+                "            AND m.value_as_concept_name = '<result_value>' THEN 1 ELSE 0 END) AS has_attr3",
+                "    FROM \"anchor_view\".\"measurement_mutation\" AS m",
+                "    INNER JOIN cohort_tested AS ct ON m.person_id = ct.person_id",
+                "    WHERE m.measurement_concept_name IN ( -- DO NOT REMOVE THIS LINE",
+                "        '<attribute_1>',",
+                "        '<attribute_2>',",
+                "        '<attribute_3>'",
+                "    )",
+                "    GROUP BY m.person_id",
+                ")",
+                "-- Step 3: aggregate — count and percentage per attribute",
+                "-- SUM(has_attrX) = patients positive for that attribute",
+                "-- COUNT(DISTINCT person_id) = total tested patients (denominator)",
+                "SELECT",
+                "    COUNT(DISTINCT person_id) AS total_tested_patients,",
+                "    SUM(has_attr1) AS patients_with_attr1,",
+                "    ROUND(SUM(has_attr1) * 100.0 / COUNT(DISTINCT person_id), 2) AS attr1_percentage,",
+                "    SUM(has_attr2) AS patients_with_attr2,",
+                "    ROUND(SUM(has_attr2) * 100.0 / COUNT(DISTINCT person_id), 2) AS attr2_percentage,",
+                "    SUM(has_attr3) AS patients_with_attr3,",
+                "    ROUND(SUM(has_attr3) * 100.0 / COUNT(DISTINCT person_id), 2) AS attr3_percentage",
+                "FROM attribute_results;",
+                "-- Example for KRAS/BRAF/NRAS: replace <attribute_1> with 'KRAS Mutation Conclusion',",
+                "-- <attribute_2> with 'BRAF Mutation Conclusion', <attribute_3> with 'NRAS Mutation Conclusion',",
+                "-- <result_value> with 'mutation detected'",
+                "",
+                "10) Drug filter with multiple OR conditions — ALWAYS use parentheses:",
+                "-- WRONG (breaks AND logic):",
+                "-- WHERE mutation_filter AND drug LIKE '%x%' OR drug LIKE '%y%'",
+                "-- CORRECT (parentheses group the OR conditions):",
+                "SELECT COUNT(DISTINCT p.person_id) AS count_patients",
+                "FROM \"anchor_view\".\"person\" AS p",
+                "INNER JOIN \"anchor_view\".\"condition_occurrence\" AS co ON p.person_id = co.person_id",
+                "INNER JOIN \"anchor_view\".\"measurement_mutation\" AS m ON p.person_id = m.person_id",
+                "INNER JOIN \"anchor_view\".\"drug_exposure_cancerdrugs\" AS d ON p.person_id = d.person_id",
+                "WHERE co.ICD10 IN ('C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20')",
+                "AND m.measurement_concept_name = 'KRAS Mutation Conclusion'",
+                "AND m.value_as_concept_name = 'no mutation detected'",
+                "AND (",
+                "    d.drug_source_value LIKE '%cetuximab%'",
+                "    OR d.drug_source_value LIKE '%panitumumab%'",
+                "    OR d.drug_source_value LIKE '%ERBITUX%'",
+                "    OR d.drug_source_value LIKE '%VECTIBIX%'",
+                ");",
             ]
         )
 
@@ -551,6 +631,9 @@ class NL2SQLEngine:
             hint=f"{user_query} {agent1.intent_summary}",
         )
 
+        # DEBUG
+        log.info("Schema context: %s", schema_context)
+
         writer_output = self.resolver.resolve(
             user_question=user_query,
             intent_summary=agent1.intent_summary,
@@ -612,7 +695,7 @@ class NL2SQLEngine:
         elif agent1.intent == "count":
             visualization = "metric"  # Single number, show as metric card
         elif agent1.intent == "mutation_prevalence":
-            visualization = "bar"
+            visualization = "metric" # transformation to "grouped bar chart" will happen in frontend 
         elif agent1.intent == "cohort_comparison":
             visualization = "bar"
         # unsupported remains table

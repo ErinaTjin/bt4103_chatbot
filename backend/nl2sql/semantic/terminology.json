@@ -13,7 +13,7 @@
     ],
     "race": [
       "race",
-      "ethinicity",
+      "ethnicity",
       "ethnic group",
       "chinese",
       "malay",
@@ -35,14 +35,13 @@
       "KRAS",
       "NRAS",
       "APC",
-      "mutated",
-      "wildtype"
+      "mutated"
     ],
     "grade": [
       "grade",
       "grading",
-      "differntiation",
-      "well differntiated",
+      "differentiation",
+      "well differentiated",
       "poorly differentiated"
     ],
     "diagnosis_year": [
@@ -52,19 +51,19 @@
       "trend"
     ],
     "institution": [
-      "instution",
+      "institution",
       "hospital",
       "centre",
       "facility"
     ],
     "procedure": [
-      "proedure",
+      "procedure",
       "surgery",
       "surgical",
       "operation",
-      "radiotheraphy",
+      "radiotherapy",
       "chemo",
-      "chemptherapy",
+      "chemotherapy",
       "treatment"
     ],
     "drug": [
@@ -356,7 +355,35 @@
       "negative",
       "not detected",
       "no mutation",
-      "wild type"
+      "wild type",
+      "no mutation detected"
+    ],
+    "cetuximab": [
+    "cetuximab",
+    "erbitux",
+    "L01FE01"
+    ],
+    "panitumumab": [
+        "panitumumab",
+        "vectibix",
+        "L01FE02"
+    ],
+    "anti_egfr": [
+        "cetuximab",
+        "panitumumab",
+        "erbitux",
+        "vectibix",
+        "anti-egfr",
+        "anti egfr"
+    ],
+    "liver_resection": [
+        "liver resection",
+        "lobectomy",
+        "wedge excision",
+        "wedge local excision",
+        "partial lobectomy",
+        "segmental resection",
+        "extended lobectomy"
     ]
   }
 }

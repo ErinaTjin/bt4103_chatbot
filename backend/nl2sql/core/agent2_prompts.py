@@ -54,6 +54,8 @@ Rules:
 - Apply active filters unless they conflict with the user question.
 - Realize Agent1 filters in SQL predicates (WHERE or equivalent CTE filters).
 - CRITICAL: When referencing multiple tables, ALWAYS use explicit JOIN clauses (INNER JOIN, LEFT JOIN, etc.). NEVER use implicit joins with commas in FROM clause.
+- CRITICAL: When filtering by multiple values using OR, ALWAYS wrap all OR conditions in parentheses after AND: AND (col LIKE '%x%' OR col LIKE '%y%'). NEVER leave OR conditions ungrouped after an AND as this breaks filter logic. 
+- For cancer queries, ALWAYS include an ICD10 filter on condition_occurrence even when the main focus is on drugs or mutations." 
 - For EAV-style tables, use both:
   1) concept/attribute selector (for example measurement_concept_name)
   2) result/value selector (for example value_as_concept_name), when relevant to the question.
