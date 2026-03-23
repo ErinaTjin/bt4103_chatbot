@@ -22,7 +22,7 @@ Return JSON in this shape:
   "intent_summary": "short plain-English summary of what SQL should answer",
   "needs_clarification": false,
   "clarification_question": null,
-  "extracted_filters": [{{"field": "...", "op": "=|!=|>|<|>=|<=|in|like|or_like", "value": "..."}}],
+  "extracted_filters": [{{"field": "...", "op": "=|!=|>|<|>=|<=|in|like|or_like|between", "value": "..."}}],
   "active_filters": {{"field": "value"}}
 }}
 

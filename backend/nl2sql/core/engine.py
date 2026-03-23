@@ -543,12 +543,15 @@ class NL2SQLEngine:
 
     def _fix_concat_comma(self, sql: str) -> str:
         """
-        Fix missing comma after string literals in CONCAT.
-        LLM consistently drops the comma in patterns like:
-        CONCAT(CAST(...), '-' CAST(...))
-        should be:
-        CONCAT(CAST(...), '-', CAST(...))
+        Fix two CONCAT issues:
+        1. Missing comma after string literals: '-' CAST → '-', CAST
+        2. Mismatched quotes in separator: '-" → '-'
         """
+        # Fix mismatched quotes first
+        sql = re.sub(r"'-\"", "'-'", sql)
+        sql = re.sub(r'\"-\'', "'-'", sql)
+        
+        # Fix missing comma after string literal before CAST
         fixed = re.sub(
             r"('[^']*')\s*\n\s*(CAST\()",
             r"\1,\n            \2",
@@ -604,9 +607,11 @@ class NL2SQLEngine:
         # DEBUG 
         log.info("=== Engine.translate START: %s", user_query) 
 
+        # Cap to last 3 turns — A0 already resolved follow-up context
+        trimmed_history = (conversation_history or [])[-6:]
         agent1 = self.extractor.extract(
             question=user_query,
-            conversation_history=conversation_history,
+            conversation_history=trimmed_history,
             active_filters=active_filters,
         )
         plan_agent1 = agent1.model_dump()
@@ -681,6 +686,10 @@ class NL2SQLEngine:
         # DEBUG
         log.info("Schema context: %s", schema_context)
 
+        # Agent 2 gets no conversation history — A0 already resolved the question
+        # into a standalone form, and A1's intent_summary captures all semantic
+        # context needed. Sending raw history to A2 inflates the prompt past the
+        # context window and is a primary cause of hallucination.
         writer_output = self.resolver.resolve(
             user_question=user_query,
             intent_summary=agent1.intent_summary,
@@ -689,7 +698,7 @@ class NL2SQLEngine:
             business_rules=self._build_business_rules(),
             sql_snippets=self._build_sql_snippets(),
             safety_instructions=self._build_safety_instructions(),
-            conversation_history=conversation_history,
+            conversation_history=None,
             active_filters=active_filters,
         )
 

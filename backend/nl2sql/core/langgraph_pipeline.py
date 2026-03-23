@@ -202,9 +202,12 @@ class NL2SQLLangGraph:
 
     def _node_agent1_context(self, state: GraphState) -> GraphState:
         resolved_question = state.get("resolved_question") or state["user_query"]
+
+        # Cap to last 3 turns — A0 already resolved follow-up context
+        trimmed_history = (state.get("conversation_history") or [])[-6:]
         agent1 = self.engine.extractor.extract(
             question=resolved_question,
-            conversation_history=state.get("conversation_history"),
+            conversation_history=trimmed_history,
             active_filters=state.get("active_filters"),
         )
         return {
@@ -251,6 +254,8 @@ class NL2SQLLangGraph:
         if extra_instruction:
             business_rules = f"{business_rules}\n- Retry feedback:\n{extra_instruction}"
 
+        # Agent 2 gets no conversation history — standalone question from A0
+        # and intent_summary from A1 are sufficient. Raw history bloats the prompt.
         writer_output = self.engine.resolver.resolve(
             user_question=resolved_question,
             intent_summary=agent1.get("intent_summary", ""),
@@ -259,7 +264,7 @@ class NL2SQLLangGraph:
             business_rules=business_rules,
             sql_snippets=self.engine._build_sql_snippets(),
             safety_instructions=self.engine._build_safety_instructions(),
-            conversation_history=state.get("conversation_history"),
+            conversation_history=None,
             active_filters=state.get("active_filters"),
         )
 
