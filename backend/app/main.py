@@ -167,6 +167,7 @@ def nl2sql_chat(req: ChatRequest):
         question=resolved_q,
         conversation_history=state["chat_history"],
         active_filters=state["active_filters"],
+        mode=req.mode,
         row_limit=req.row_limit,
     )
 

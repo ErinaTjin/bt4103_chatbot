@@ -36,6 +36,7 @@ class NL2SQLResponse(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     question: str
+    mode: Literal["fast", "strict"] = "fast"   # ← add this
     row_limit: int | None = Field(default=None, ge=1)
 
 class ChatResponse(NL2SQLResponse):
