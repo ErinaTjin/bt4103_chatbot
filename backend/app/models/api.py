@@ -32,3 +32,14 @@ class NL2SQLResponse(BaseModel):
     warnings: list[str]
     executed: bool
     data: SQLResponse | None = None
+
+class ChatRequest(BaseModel):
+    session_id: str
+    question: str
+    row_limit: int | None = Field(default=None, ge=1)
+
+class ChatResponse(NL2SQLResponse):
+    session_id: str
+    resolved_question: str   # what Agent 0 produced
+    active_filters: dict[str, Any]
+    chat_history: list[dict[str, Any]]
