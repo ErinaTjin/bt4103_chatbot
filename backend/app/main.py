@@ -16,13 +16,14 @@ from app.models.api import (
     NL2SQLResponse,
 )
 from app.services.nl2sql_service import nl2sql_service
-
+from app.db.session_store import init_db, load_session, save_session, reset_session, clear_filters
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     con = duckdb_manager.connect()
     register_views(con)
     nl2sql_service.initialize()
+    init_db()
 
     yield
 
