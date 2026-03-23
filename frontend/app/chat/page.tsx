@@ -2,54 +2,49 @@
 
 import { useEffect, useState } from "react";
 import { Message } from "../../lib/types";
-import { queryBackend } from "../../lib/api";
+import { queryBackend, resetSession } from "../../lib/api";
 import { MessageBubble } from "../../components/MessageBubble";
 import { ChatInput } from "../../components/ChatInput";
-import { Bug } from "lucide-react";
+import { Bug, RotateCcw } from "lucide-react";
 
-const STORAGE_KEY = "nccs_chat_history_v1";
+const SESSION_KEY = "anchor_session_id";
+
+const WELCOME_MESSAGE: Message = {
+  id: "1",
+  role: "assistant",
+  content: "Hello! Ask me anything about the cancer data.",
+  timestamp: new Date().toISOString(),
+  kind: "result",
+};
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [chatMode, setChatMode] = useState<"fast" | "strict">("fast");
 
+  // Generate or restore session ID on mount
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as Message[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = parsed.map((m, idx) => ({
-            ...m,
-            role: m.role ?? (idx % 2 === 0 ? "assistant" : "user"),
-            timestamp: m.timestamp ?? new Date().toISOString(),
-          })) as Message[];
-          setMessages(normalized);
-          return;
-        }
-      } catch {
-        // fall through to default welcome message
-      }
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem(SESSION_KEY, id);
     }
-
-    setMessages([
-      {
-        id: "1",
-        role: "assistant",
-        content: "Hello! Ask me anything about the cancer data.",
-        timestamp: new Date().toISOString(),
-        kind: "result",
-      },
-    ]);
+    setSessionId(id);
+    setMessages([WELCOME_MESSAGE]);
   }, []);
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+  // ── handleReset is at component scope so the Reset button can call it ──
+  const handleReset = async () => {
+    if (sessionId) {
+      await resetSession(sessionId);
     }
-  }, [messages]);
+    const newId = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, newId);
+    setSessionId(newId);
+    setMessages([WELCOME_MESSAGE]);
+  };
 
   const handleSend = async (content: string) => {
     const userMessage: Message = {
@@ -60,12 +55,11 @@ export default function ChatPage() {
       kind: "query",
     };
 
-    const historyForBackend = [...messages, userMessage];
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      const result = await queryBackend(content, historyForBackend, chatMode);
+      const result = await queryBackend(content, sessionId, chatMode);
 
       const needsClarification = Boolean(result.query_plan?.needs_clarification);
       const clarificationQuestion = result.query_plan?.clarification_question;
@@ -116,6 +110,8 @@ export default function ChatPage() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <h1 className="text-sm font-semibold text-gray-700">ANCHOR Cancer Analytics</h1>
         <div className="flex items-center gap-2">
+
+          {/* Fast / Strict mode toggle */}
           <button
             onClick={() => setChatMode((prev) => (prev === "fast" ? "strict" : "fast"))}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
@@ -127,6 +123,8 @@ export default function ChatPage() {
           >
             {chatMode === "fast" ? "Fast Mode" : "Strict Mode"}
           </button>
+
+          {/* Debug toggle */}
           <button
             onClick={() => setDebugMode((prev) => !prev)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
@@ -138,6 +136,18 @@ export default function ChatPage() {
             <Bug className="w-3.5 h-3.5" />
             {debugMode ? "Debug ON" : "Debug OFF"}
           </button>
+
+          {/* Reset session button */}
+          <button
+            onClick={handleReset}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Clear conversation and start a new session"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset
+          </button>
+
         </div>
       </div>
 
