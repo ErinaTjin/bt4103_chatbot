@@ -253,6 +253,71 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       },
     };
 
+    // Fallback: metric type but multiple rows → render as bar chart
+    // Handles cases where Agent1 classifies multi-row results as 'count'
+    // e.g. count by year returns 2 rows but was classified as count intent
+    if (type === "metric" && data.length > 1) {
+      const isYearDimension = keys[0].includes("year") || keys[0].includes("date");
+      const chartType = isYearDimension && data.length > 3 ? "line" : "bar";
+
+      // Detect all numeric columns and use first one for y-axis:
+      const numericCols = keys.slice(1).filter(k => typeof data[0][k] === "number");
+      const yField = numericCols[0] ?? keys[1];
+
+      const multiRowSpec = {
+        $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+        data: { values: data },
+        width: "container" as const,
+        height: "container" as const,
+        background: "transparent",
+        mark: {
+          type: chartType,
+          tooltip: true,
+          ...(chartType === "bar" ? { cornerRadiusEnd: 4 } : { point: true, strokeWidth: 2 }),
+        },
+        encoding: {
+          x: {
+            field: keys[0],
+            type: "ordinal", 
+            title: null,
+            axis: { labelAngle: 0},
+          },
+          y: {
+            field: yField,
+            type: "quantitative",
+            title: null,
+            scale: { zero: true },
+          },
+          color: chartType === "bar" ? {
+            field: keys[0],
+            type: "nominal",
+            scale: { range: COLORS },
+            legend: null,
+          } : { value: COLORS[0] },
+          tooltip: keys.map(k => ({
+            field: k,
+            type: typeof data[0][k] === "number" ? "quantitative" : "nominal",
+            title: k.replace(/_/g, " "),
+          })),
+        },
+        config: {
+          view: { stroke: "transparent" },
+          axis: { grid: false, domain: false, ticks: false, labelPadding: 10 },
+          axisY: { grid: true, gridDash: [3, 3] },
+        },
+      };
+
+      return (
+        <ChartErrorBoundary fallbackData={data}>
+          <VegaEmbed
+            spec={multiRowSpec}
+            options={{ actions: false }}
+            style={{ width: "100%", height: "100%" }}
+          />
+        </ChartErrorBoundary>
+      );
+    }
+
     switch (type) {
       case "pie":
         spec = {

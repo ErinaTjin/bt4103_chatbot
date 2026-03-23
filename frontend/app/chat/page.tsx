@@ -79,8 +79,17 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
+    // Build conversation history from existing messages
+    const conversationHistory = messages
+      .filter(m => m.id !== "1")  // exclude welcome message
+      .map(m => ({
+        role: m.role,
+        content: m.content,
+        kind: m.kind,
+      }));
+
     try {
-      const result = await queryBackend(content, sessionId, chatMode);
+      const result = await queryBackend(content, sessionId, chatMode, conversationHistory);
 
       const needsClarification = Boolean(result.query_plan?.needs_clarification);
       const clarificationQuestion = result.query_plan?.clarification_question;

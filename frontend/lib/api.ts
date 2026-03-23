@@ -6,7 +6,8 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:80
 export async function queryBackend(
   message: string,
   sessionId: string,
-  mode: "fast" | "strict" = "fast"
+  mode: "fast" | "strict" = "fast",
+  conversationHistory: Array<{role: string, content: string, kind?: string}> = [] // ADDED THIS BC NO CONVERSATION HISTORY IS BEING SENT 
 ): Promise<QueryResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 200000); // 200s for slow local LLM
@@ -14,7 +15,12 @@ export async function queryBackend(
   const response = await fetch(`${BACKEND_URL}/nl2sql/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, question: message, mode }),
+    body: JSON.stringify({ 
+      session_id: sessionId, 
+      question: message, 
+      mode, 
+      conversation_history: conversationHistory // ADDED THIS BC NO CONVERSATION HISTORY IS BEING SENT 
+    }),
     signal: controller.signal,
   });
   clearTimeout(timeoutId);
