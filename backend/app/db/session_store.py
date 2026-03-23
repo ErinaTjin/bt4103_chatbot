@@ -11,7 +11,7 @@ The session state is a JSON object with the following structure:
 {
     "chat_history": [  # list of chat messages in the session
         {"role": "user", "content": "What is the total number of patients?"},  # example user message
-        {"role": "user", "content": "SELECT COUNT(*) FROM patients;"}  # example assistant response
+        {"role": "assistant", "content": "SELECT COUNT(*) FROM patients;"}  # example assistant response
     ],
     "active_filters": {  # dictionary of active filters applied to the data
         "country": ["USA", "Canada"],  # example filter on the 'country' dimension
