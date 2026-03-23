@@ -160,7 +160,7 @@ def nl2sql_chat(req: ChatRequest):
             "chat_history": state["chat_history"],
         }
 
-    resolved_q = resolution.resolved_question
+    resolved_q = resolution.standalone_question
 
     # ── Engine: Agent1 + Agent2 ──
     result = nl2sql_service.translate_and_execute(
@@ -173,8 +173,13 @@ def nl2sql_chat(req: ChatRequest):
 
     # ── Update session state ──
     # Merge any new filters Agent1 extracted back into active_filters
-    new_filters = result.get("plan", {}).get("active_filters") or {}
-    merged_filters = {**state["active_filters"], **new_filters}
+    new_extracted = result.get("plan", {}).get("extracted_filters") or []
+    new_filter_dict = {
+        f["field"]: f["value"]
+        for f in new_extracted
+        if isinstance(f, dict) and f.get("field")
+    }
+    merged_filters = {**state["active_filters"], **new_filter_dict}
 
     state["chat_history"].append({"role": "user",    "content": req.question})
     state["chat_history"].append({"role": "assistant","content": resolved_q})
