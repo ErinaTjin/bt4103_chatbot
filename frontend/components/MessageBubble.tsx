@@ -71,6 +71,21 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
           {formattedTime}
         </p>
 
+        {/* Agent 0 interpretation — only shown when question was rewritten */}
+        {!isUser &&
+          message.result?.resolved_question &&
+          message.result.resolved_question !== message.content && (
+          <details className="mt-2 group">
+            <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 select-none list-none flex items-center gap-1 w-fit">
+              <ChevronDown className="w-2.5 h-2.5 transition-transform group-open:rotate-180" />
+              interpreted as
+            </summary>
+            <p className="mt-1.5 text-xs text-gray-500 italic pl-3 border-l-2 border-gray-200 leading-relaxed">
+              "{message.result.resolved_question}"
+            </p>
+          </details>
+        )}
+
         {message.result && !message.result.error && (
           <div className="mt-6 space-y-4">
             {showChart ? (

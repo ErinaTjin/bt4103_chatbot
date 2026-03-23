@@ -30,6 +30,7 @@ export async function queryBackend(
     plan_agent2: raw.plan_agent2,
     guardrails: { ok: raw.warnings?.length === 0, warnings: raw.warnings ?? [] },
     warnings: raw.warnings ?? [],
+    resolved_question: raw.resolved_question ?? undefined,
     error: raw.error || (raw.executed === false && !raw.warnings?.length
       ? "Failed to execute query" : undefined),
   };

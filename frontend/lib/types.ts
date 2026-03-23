@@ -46,6 +46,7 @@ export interface QueryResponse {
   warnings?: string[];
   metadata?: Record<string, unknown>;
   error?: string;
+  resolved_question?: string;
 }
 
 export type Message = {
