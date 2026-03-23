@@ -334,7 +334,7 @@ class NL2SQLLangGraph:
                 },
                 valid=False,
                 warnings=[
-                    f"Clarification limit reached for mode={state.get("mode", "fast")}. Please provide a complete question in one message."
+                    f"Clarification limit reached for mode={state.get('mode', 'fast')}. Please provide a complete question in one message."
                 ],
                 plan_agent1=state.get("plan_agent1"),
                 plan_agent2=state.get("plan_agent2"),

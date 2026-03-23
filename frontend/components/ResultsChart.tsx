@@ -74,6 +74,25 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
   );
   const totalKey = keys.find(k => k.startsWith("total_"));
 
+  const formatValue = (key: string, val: number): string => {
+    if (
+      key.includes("year") ||
+      key.includes("date") ||
+      key === "age_group_start" ||
+      key.includes("_id")
+    ) {
+      return val.toString();
+    }
+    if (
+      key.includes("proportion") ||
+      key.includes("pct") ||
+      key.includes("percentage")
+    ) {
+      return `${(val * (val <= 1 ? 100 : 1)).toFixed(1)}%`;
+    }
+    return val.toLocaleString();
+  };
+
   const renderChart = () => {
 
     // Fallback: single row, single column → always metric card regardless of type
@@ -87,7 +106,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
               Result
             </p>
             <p className="text-6xl font-bold text-blue-600 mb-2">
-              {typeof value === "number" ? value.toLocaleString() : value}
+              {typeof value === "number" ? formatValue(keys[0], value) : value}
             </p>
             <p className="text-xs text-gray-400 uppercase tracking-widest">
               {keys[0].replace(/_/g, " ")}
@@ -194,7 +213,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                 {totalKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}:
               </span>
               <span className="text-sm font-bold text-blue-600 ml-2">
-                {totalValue?.toLocaleString()}
+                {totalValue !== null ? formatValue(totalKey ?? "", totalValue) : ""}
               </span>
             </div>
           )}
@@ -335,11 +354,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                       {key.replace(/_/g, " ")}
                     </p>
                     <p className={`font-bold text-blue-600 mb-1 ${keys.length > 3 ? "text-3xl" : "text-5xl"}`}>
-                      {typeof val === "number"
-                        ? key.includes("proportion") || key.includes("pct") || key.includes("percentage")
-                          ? `${(val * (val <= 1 ? 100 : 1)).toFixed(1)}%`
-                          : val.toLocaleString()
-                        : val}
+                      {typeof val === "number" ? formatValue(key, val) : val}
                     </p>
                   </div>
                 );
@@ -356,7 +371,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                 Result
               </p>
               <p className="text-6xl font-bold text-blue-600 mb-2">
-                {typeof value === "number" ? value.toLocaleString() : value}
+                {typeof value === "number" ? formatValue(primaryMetric, value) : value}
               </p>
               <p className="text-xs text-gray-400 uppercase tracking-widest">
                 {primaryMetric}

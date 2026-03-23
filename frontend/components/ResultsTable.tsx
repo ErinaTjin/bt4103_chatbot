@@ -35,6 +35,10 @@ export function ResultsTable({ data }: ResultsTableProps) {
           if (key.includes("percentage")) {
             return `${value.toLocaleString()}%`;
           }
+          // Don't format year columns with thousand separators
+          if (key.includes("year") || key.includes("date")) {
+            return value.toString();
+          }
           return value.toLocaleString();
         }
         return value;
