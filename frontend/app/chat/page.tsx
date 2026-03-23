@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Message } from "../../lib/types";
-import { queryBackend, resetSession } from "../../lib/api";
+import { queryBackend, resetSession, clearSessionFilters } from "../../lib/api";
 import { MessageBubble } from "../../components/MessageBubble";
 import { ChatInput } from "../../components/ChatInput";
-import { Bug, RotateCcw } from "lucide-react";
+import { Bug, RotateCcw, Filter } from "lucide-react";
 
 const SESSION_KEY = "anchor_session_id";
 
@@ -137,7 +137,18 @@ export default function ChatPage() {
             {debugMode ? "Debug ON" : "Debug OFF"}
           </button>
 
-          {/* Reset session button */}
+          {/* Clear filters button, remove active filters, keep chat history */}
+          <button
+            onClick={handleClearFilters}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Clear active filters (e.g. cancer type, year) but keep chat history"
+          >
+            <Filter className="w-3.5 h-3.5" />
+            Clear filters
+          </button>
+
+          {/* Reset session button, clear active filters and chat history */}
           <button
             onClick={handleReset}
             disabled={isLoading}

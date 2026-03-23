@@ -1,15 +1,6 @@
-import { Message, QueryResponse } from './types';
+import { QueryResponse } from './types';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-
-function toHistory(messages: Message[]) {
-  return messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-    timestamp: m.timestamp,
-    kind: m.kind,
-  }));
-}
 
 // API wrapper for backend communication
 export async function queryBackend(
