@@ -8,6 +8,7 @@ import { ChatInput } from "../../components/ChatInput";
 import { Bug, RotateCcw, Filter } from "lucide-react";
 
 const SESSION_KEY = "anchor_session_id";
+const MESSAGES_KEY = "anchor_chat_messages";
 
 const WELCOME_MESSAGE: Message = {
   id: "1",
@@ -32,8 +33,21 @@ export default function ChatPage() {
       sessionStorage.setItem(SESSION_KEY, id);
     }
     setSessionId(id);
-    setMessages([WELCOME_MESSAGE]);
+    const saved = sessionStorage.getItem(MESSAGES_KEY);  // tries to restore past messages in session
+    if (saved) {
+      try { setMessages(JSON.parse(saved)); }
+      catch { setMessages([WELCOME_MESSAGE]); }
+    } else {
+      setMessages([WELCOME_MESSAGE]);
+    }
   }, []);
+
+  // save messages to sessionStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+    }
+  }, [messages]);
 
   // ── handleReset is at component scope so the Reset button can call it ──
   const handleReset = async () => {
@@ -42,6 +56,7 @@ export default function ChatPage() {
     }
     const newId = crypto.randomUUID();
     sessionStorage.setItem(SESSION_KEY, newId);
+    sessionStorage.removeItem(MESSAGES_KEY);
     setSessionId(newId);
     setMessages([WELCOME_MESSAGE]);
   };
