@@ -556,11 +556,48 @@ class NL2SQLEngine:
         )
         return fixed
 
+    @staticmethod
+    def _is_high_risk_clarification(user_query: str, clarification_question: str | None = None) -> bool:
+        text = f"{user_query} {clarification_question or ''}".lower()
+        high_risk_keywords = {
+            "treat",
+            "treatment",
+            "therapy",
+            "drug",
+            "medication",
+            "dose",
+            "dosage",
+            "prescrib",
+            "recommend",
+            "advice",
+            "prognosis",
+            "survival",
+            "mortality",
+            "death",
+            "emergency",
+            "urgent",
+        }
+        return any(token in text for token in high_risk_keywords)
+
+    def _should_ask_clarification(
+        self,
+        mode: str,
+        user_query: str,
+        clarification_question: str | None = None,
+    ) -> bool:
+        mode_normalized = str(mode).lower()
+        if mode_normalized == "fast":
+            return False
+        if mode_normalized == "strict":
+            return self._is_high_risk_clarification(user_query, clarification_question)
+        return False
+
     def translate(
         self,
         user_query: str,
         conversation_history: List[Dict[str, Any] | str] | None = None,
         active_filters: Dict[str, Any] | None = None,
+        mode: str = "fast",
     ) -> TranslationResult:
         warnings: List[str] = []
 
@@ -578,20 +615,30 @@ class NL2SQLEngine:
         log.info("Agent1 output: %s", agent1.model_dump())
 
         if agent1.needs_clarification:
-            return TranslationResult(
-                sql="",
-                plan={
-                    "intent_summary": agent1.intent_summary,
-                    "needs_clarification": True,
-                    "clarification_question": agent1.clarification_question,
-                    "active_filters": agent1.active_filters,
-                    "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
-                },
-                valid=False,
-                warnings=[agent1.clarification_question or "Clarification required."],
-                plan_agent1=plan_agent1,
-                plan_agent2=None,
+            should_ask = self._should_ask_clarification(
+                mode=mode,
+                user_query=user_query,
+                clarification_question=agent1.clarification_question,
             )
+            if not should_ask:
+                warnings.append("Proceeding without clarification due to mode policy.")
+                agent1.needs_clarification = False
+                agent1.clarification_question = None
+            else:
+                return TranslationResult(
+                    sql="",
+                    plan={
+                        "intent_summary": agent1.intent_summary,
+                        "needs_clarification": True,
+                        "clarification_question": agent1.clarification_question,
+                        "active_filters": agent1.active_filters,
+                        "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
+                    },
+                    valid=False,
+                    warnings=[agent1.clarification_question or "Clarification required."],
+                    plan_agent1=plan_agent1,
+                    plan_agent2=None,
+                )
 
         # QueryPlan validation — before SQL generation
         plan_errors = self._validate_query_plan(agent1)

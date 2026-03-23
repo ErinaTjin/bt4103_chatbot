@@ -49,6 +49,7 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
   const hasReasoning = reasoningSummary || (assumptions && assumptions.length > 0);
 
   const warnings = message.result?.warnings ?? [];
+  const formattedTime = new Date(message.timestamp).toLocaleTimeString();
 
   return (
     <div
@@ -65,6 +66,9 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
           className={`text-sm leading-relaxed ${isUser ? "text-white" : "text-gray-800 font-medium"}`}
         >
           {message.content}
+        </p>
+        <p className={`mt-2 text-[10px] ${isUser ? "text-blue-100" : "text-gray-400"}`}>
+          {formattedTime}
         </p>
 
         {message.result && !message.result.error && (

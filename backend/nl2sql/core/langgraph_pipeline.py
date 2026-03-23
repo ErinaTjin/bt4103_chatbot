@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, TypedDict
 
 from nl2sql.core.engine import NL2SQLEngine, TranslationResult
@@ -22,6 +23,8 @@ class GraphState(TypedDict, total=False):
     blocking_issues: List[str]
     rewriter_feedback: str
     retry_count: int
+    clarification_limit_exceeded: bool
+    mode: str
 
     agent1: Dict[str, Any]
     plan_agent1: Dict[str, Any]
@@ -45,6 +48,8 @@ class NL2SQLLangGraph:
     def __init__(self, engine: NL2SQLEngine) -> None:
         self.engine = engine
         self.context_agent = ContextAgent(engine.llm)
+        self.max_clarification_asks = int(os.getenv("MAX_CLARIFICATION_ASKS", "1"))
+        self.strict_clarification_asks = int(os.getenv("MAX_CLARIFICATION_ASKS_STRICT", "3"))
         self._app = self._build_graph()
 
     def _build_graph(self):
@@ -82,11 +87,68 @@ class NL2SQLLangGraph:
 
         return graph.compile()
 
+    def _clarification_limit(self, mode: str) -> int:
+        return self.strict_clarification_asks if str(mode).lower() == "strict" else self.max_clarification_asks
+
+    @staticmethod
+    def _is_high_risk_clarification(user_query: str, clarification_question: str | None = None) -> bool:
+        """
+        High-risk requests should not silently assume missing details.
+        """
+        text = f"{user_query} {clarification_question or ''}".lower()
+        high_risk_keywords = {
+            "treat",
+            "treatment",
+            "therapy",
+            "drug",
+            "medication",
+            "dose",
+            "dosage",
+            "prescrib",
+            "recommend",
+            "advice",
+            "prognosis",
+            "survival",
+            "mortality",
+            "death",
+            "emergency",
+            "urgent",
+        }
+        return any(token in text for token in high_risk_keywords)
+
+    def _should_ask_clarification(
+        self,
+        mode: str,
+        user_query: str,
+        clarification_question: str | None = None,
+    ) -> bool:
+        mode_normalized = str(mode).lower()
+        if mode_normalized == "fast":
+            return False
+        if mode_normalized == "strict":
+            return self._is_high_risk_clarification(user_query, clarification_question)
+        return False
+
+    def _clarification_ask_count(self, history: List[Dict[str, Any] | str] | None) -> int:
+        if not history:
+            return 0
+        count = 0
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "")).lower()
+            kind = str(item.get("kind", "")).lower()
+            content = str(item.get("content", "")).lower()
+            if role == "assistant" and (kind == "clarification" or "clarif" in content):
+                count += 1
+        return count
+
     def invoke(
         self,
         user_query: str,
         conversation_history: List[Dict[str, Any] | str] | None = None,
         active_filters: Dict[str, Any] | None = None,
+        mode: str = "fast",
     ) -> TranslationResult:
         initial_state: GraphState = {
             "user_query": user_query,
@@ -95,6 +157,8 @@ class NL2SQLLangGraph:
             "warnings": [],
             "blocking_issues": [],
             "retry_count": 0,
+            "clarification_limit_exceeded": False,
+            "mode": mode,
         }
         final_state = self._app.invoke(initial_state)
         return final_state["result"]
@@ -111,7 +175,28 @@ class NL2SQLLangGraph:
         }
 
     def _route_after_context(self, state: GraphState) -> str:
-        if state.get("context_resolution", {}).get("needs_clarification", False):
+        context_resolution = state.get("context_resolution", {})
+        if context_resolution.get("needs_clarification", False):
+            clarification_question = context_resolution.get("clarification_question")
+            should_ask = self._should_ask_clarification(
+                mode=state.get("mode", "fast"),
+                user_query=state.get("user_query", ""),
+                clarification_question=clarification_question,
+            )
+            if not should_ask:
+                warnings = list(state.get("warnings", []))
+                warnings.append(
+                    "Proceeding without clarification due to mode policy."
+                )
+                state["warnings"] = warnings
+                context_resolution["needs_clarification"] = False
+                context_resolution["clarification_question"] = None
+                state["context_resolution"] = context_resolution
+                return "to_agent1"
+
+            asked = self._clarification_ask_count(state.get("conversation_history"))
+            if asked >= self._clarification_limit(state.get("mode", "fast")):
+                state["clarification_limit_exceeded"] = True
             return "to_finalize"
         return "to_agent1"
 
@@ -128,7 +213,28 @@ class NL2SQLLangGraph:
         }
 
     def _route_after_agent1(self, state: GraphState) -> str:
-        if state["agent1"].get("needs_clarification", False):
+        agent1 = state["agent1"]
+        if agent1.get("needs_clarification", False):
+            clarification_question = agent1.get("clarification_question")
+            should_ask = self._should_ask_clarification(
+                mode=state.get("mode", "fast"),
+                user_query=state.get("resolved_question") or state.get("user_query", ""),
+                clarification_question=clarification_question,
+            )
+            if not should_ask:
+                warnings = list(state.get("warnings", []))
+                warnings.append(
+                    "Proceeding without clarification due to mode policy."
+                )
+                state["warnings"] = warnings
+                agent1["needs_clarification"] = False
+                agent1["clarification_question"] = None
+                state["agent1"] = agent1
+                return "to_writer"
+
+            asked = self._clarification_ask_count(state.get("conversation_history"))
+            if asked >= self._clarification_limit(state.get("mode", "fast")):
+                state["clarification_limit_exceeded"] = True
             return "to_finalize"
         return "to_writer"
 
@@ -213,6 +319,27 @@ class NL2SQLLangGraph:
 
     def _node_finalize(self, state: GraphState) -> GraphState:
         context_resolution = state.get("context_resolution", {})
+
+        if state.get("clarification_limit_exceeded", False):
+            result = TranslationResult(
+                sql="",
+                plan={
+                    "resolved_question": state.get("resolved_question", ""),
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "context_summary": context_resolution.get("context_summary"),
+                    "active_filters": state.get("active_filters", {}),
+                    "extracted_filters": [],
+                    "error": "clarification_limit_exceeded",
+                },
+                valid=False,
+                warnings=[
+                    f"Clarification limit reached for mode={state.get("mode", "fast")}. Please provide a complete question in one message."
+                ],
+                plan_agent1=state.get("plan_agent1"),
+                plan_agent2=state.get("plan_agent2"),
+            )
+            return {"result": result}
         if context_resolution.get("needs_clarification", False):
             result = TranslationResult(
                 sql="",

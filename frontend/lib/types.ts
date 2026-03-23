@@ -44,14 +44,17 @@ export interface QueryResponse {
   plan_agent2?: QueryPlan;
   guardrails: Guardrails;
   warnings?: string[];
+  metadata?: Record<string, unknown>;
   error?: string;
 }
 
 export type Message = {
   id: string;
+  role: "user" | "assistant";
   content: string;
   result?: QueryResponse;
-  timestamp: Date;
+  timestamp: string;
+  kind?: "query" | "clarification" | "result" | "error";
 };
 
 // Helper type for table rows

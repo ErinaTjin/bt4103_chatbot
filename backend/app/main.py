@@ -82,6 +82,7 @@ def nl2sql_translate(req: NL2SQLRequest):
             question=req.question,
             conversation_history=req.conversation_history,
             active_filters=req.active_filters,
+            mode=req.mode,
         )
 
         return {
@@ -106,6 +107,7 @@ def nl2sql_execute(req: NL2SQLRequest):
             question=req.question,
             conversation_history=req.conversation_history,
             active_filters=req.active_filters,
+            mode=req.mode,
             row_limit=req.row_limit,
         )
 

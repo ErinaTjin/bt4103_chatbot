@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Any
+from typing import Any, Literal
 
 
 class SQLRequest(BaseModel):
@@ -19,6 +19,7 @@ class NL2SQLRequest(BaseModel):
     question: str
     conversation_history: list[dict[str, Any] | str] | None = None
     active_filters: dict[str, Any] | None = None
+    mode: Literal["fast", "strict"] = "fast"
     row_limit: int | None = Field(default=None, ge=1)
 
 
