@@ -61,6 +61,12 @@ export default function ChatPage() {
     setMessages([WELCOME_MESSAGE]);
   };
 
+  const handleClearFilters = async () => {
+    if (sessionId) {
+      await clearSessionFilters(sessionId);
+    }
+  };
+
   const handleSend = async (content: string) => {
     const userMessage: Message = {
       id: `${Date.now()}`,
