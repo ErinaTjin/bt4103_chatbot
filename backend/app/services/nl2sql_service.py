@@ -38,6 +38,7 @@ class NL2SQLService:
         question: str,
         conversation_history: list[dict | str] | None = None,
         active_filters: dict | None = None,
+        mode: str = "fast",
     ):
         """
         Translate a natural language question into Agent1 summary + SQL.
@@ -49,11 +50,13 @@ class NL2SQLService:
                 question,
                 conversation_history=conversation_history,
                 active_filters=active_filters,
+                mode=mode,
             )
         return self.engine.translate(
             question,
             conversation_history=conversation_history,
             active_filters=active_filters,
+            mode=mode,
         )
 
     def translate_and_execute(
@@ -61,6 +64,7 @@ class NL2SQLService:
         question: str,
         conversation_history: list[dict | str] | None = None,
         active_filters: dict | None = None,
+        mode: str = "fast",
         row_limit: int | None = None,
     ):
         """
@@ -70,10 +74,11 @@ class NL2SQLService:
         if self.engine is None:
             raise RuntimeError("NL2SQL engine not initialized.")
 
-        result = self.engine.translate(
-            question,
+        result = self.translate(
+            question=question,
             conversation_history=conversation_history,
             active_filters=active_filters,
+            mode=mode,
         )
 
         # DEBUG

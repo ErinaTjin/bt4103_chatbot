@@ -1,45 +1,115 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Message } from "../../lib/types";
-import { queryBackend } from "../../lib/api";
+import { queryBackend, resetSession, clearSessionFilters } from "../../lib/api";
 import { MessageBubble } from "../../components/MessageBubble";
 import { ChatInput } from "../../components/ChatInput";
-import { Bug } from "lucide-react";
+import { Bug, RotateCcw, Filter } from "lucide-react";
+
+const SESSION_KEY = "anchor_session_id";
+const MESSAGES_KEY = "anchor_chat_messages";
+
+const WELCOME_MESSAGE: Message = {
+  id: "1",
+  role: "assistant",
+  content: "Hello! Ask me anything about the cancer data.",
+  timestamp: new Date().toISOString(),
+  kind: "result",
+};
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content: "Hello! Ask me anything about the cancer data.",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [chatMode, setChatMode] = useState<"fast" | "strict">("fast");
+
+  // Generate or restore session ID on mount
+  useEffect(() => {
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem(SESSION_KEY, id);
+    }
+    setSessionId(id);
+    const saved = sessionStorage.getItem(MESSAGES_KEY);  // tries to restore past messages in session
+    if (saved) {
+      try { setMessages(JSON.parse(saved)); }
+      catch { setMessages([WELCOME_MESSAGE]); }
+    } else {
+      setMessages([WELCOME_MESSAGE]);
+    }
+  }, []);
+
+  // save messages to sessionStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  // ── handleReset is at component scope so the Reset button can call it ──
+  const handleReset = async () => {
+    if (sessionId) {
+      await resetSession(sessionId);
+    }
+    const newId = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, newId);
+    sessionStorage.removeItem(MESSAGES_KEY);
+    setSessionId(newId);
+    setMessages([WELCOME_MESSAGE]);
+  };
+
+  const handleClearFilters = async () => {
+    if (sessionId) {
+      await clearSessionFilters(sessionId);
+    }
+  };
 
   const handleSend = async (content: string) => {
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `${Date.now()}`,
+      role: "user",
       content,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
+      kind: "query",
     };
+
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
+    // Build conversation history from existing messages
+    const conversationHistory = messages
+      .filter(m => m.id !== "1")  // exclude welcome message
+      .map(m => ({
+        role: m.role,
+        content: m.content,
+        kind: m.kind,
+      }));
+
     try {
-      const result = await queryBackend(content);
+      const result = await queryBackend(content, sessionId, chatMode, conversationHistory);
+
+      const needsClarification = Boolean(result.query_plan?.needs_clarification);
+      const clarificationQuestion = result.query_plan?.clarification_question;
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: "Here are your results:",
+        id: `${Date.now() + 1}`,
+        role: "assistant",
+        content: needsClarification
+          ? clarificationQuestion || "Could you clarify your request?"
+          : "Here are your results:",
         result,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
+        kind: needsClarification ? "clarification" : "result",
       };
+
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `${Date.now() + 1}`,
+        role: "assistant",
         content: "Sorry, something went wrong.",
         result: {
           data: [],
@@ -56,7 +126,8 @@ export default function ChatPage() {
           guardrails: { ok: false, warnings: [] },
           error: "Failed to connect to server",
         },
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
+        kind: "error",
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
@@ -66,28 +137,67 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-screen max-w-6xl mx-auto">
-      {/* Header with debug toggle */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <h1 className="text-sm font-semibold text-gray-700">ANCHOR Cancer Analytics</h1>
-        <button
-          onClick={() => setDebugMode((prev) => !prev)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-            debugMode
-              ? "bg-amber-100 text-amber-700 border border-amber-200"
-              : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
-          }`}
-        >
-          <Bug className="w-3.5 h-3.5" />
-          {debugMode ? "Debug ON" : "Debug OFF"}
-        </button>
+        <div className="flex items-center gap-2">
+
+          {/* Fast / Strict mode toggle */}
+          <button
+            onClick={() => setChatMode((prev) => (prev === "fast" ? "strict" : "fast"))}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              chatMode === "fast"
+                ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                : "bg-indigo-100 text-indigo-700 border-indigo-200"
+            }`}
+            title="fast: fewer clarifications, strict: ask for precision"
+          >
+            {chatMode === "fast" ? "Fast Mode" : "Strict Mode"}
+          </button>
+
+          {/* Debug toggle */}
+          <button
+            onClick={() => setDebugMode((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              debugMode
+                ? "bg-amber-100 text-amber-700 border border-amber-200"
+                : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+            }`}
+          >
+            <Bug className="w-3.5 h-3.5" />
+            {debugMode ? "Debug ON" : "Debug OFF"}
+          </button>
+
+          {/* Clear filters button, remove active filters, keep chat history */}
+          <button
+            onClick={handleClearFilters}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Clear active filters (e.g. cancer type, year) but keep chat history"
+          >
+            <Filter className="w-3.5 h-3.5" />
+            Clear filters
+          </button>
+
+          {/* Reset session button, clear active filters and chat history */}
+          <button
+            onClick={handleReset}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Clear conversation and start a new session"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset
+          </button>
+
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
+        {messages.map((message) => (
           <MessageBubble
             key={message.id}
             message={message}
-            isUser={index % 2 !== 0}
+            isUser={message.role === "user"}
             debugMode={debugMode}
           />
         ))}

@@ -44,15 +44,27 @@ export interface QueryResponse {
   plan_agent2?: QueryPlan;
   guardrails: Guardrails;
   warnings?: string[];
+  metadata?: Record<string, unknown>;
   error?: string;
+  resolved_question?: string;
 }
 
 export type Message = {
   id: string;
+  role: "user" | "assistant";
   content: string;
   result?: QueryResponse;
-  timestamp: Date;
+  timestamp: string;
+  kind?: "query" | "clarification" | "result" | "error";
 };
 
 // Helper type for table rows
 export type DataRow = Record<string, string | number>;
+
+// Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)
+export interface ChatResponse extends QueryResponse {
+  session_id: string;
+  resolved_question: string;
+  active_filters: Record<string, unknown>;
+  chat_history: { role: string; content: string }[];
+}
