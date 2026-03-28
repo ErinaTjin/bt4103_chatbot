@@ -162,24 +162,35 @@ def nl2sql_chat(req: ChatRequest):
 
     resolved_q = resolution.standalone_question
 
+    # ── Decide which active_filters to pass to the engine ──
+    # If Agent 0 determined this is a brand new question (not a follow-up),
+    # we pass empty filters so stale session filters don't contaminate the new query.
+    # If it is a follow-up, we pass the full session filters so context is preserved.
+    filters_for_engine = state["active_filters"] if resolution.is_follow_up else {}
+ 
     # ── Engine: Agent1 + Agent2 ──
     result = nl2sql_service.translate_and_execute(
         question=resolved_q,
         conversation_history=state["chat_history"],
-        active_filters=state["active_filters"],
+        active_filters=filters_for_engine,
         mode=req.mode,
         row_limit=req.row_limit,
     )
 
     # ── Update session state ──
-    # Merge any new filters Agent1 extracted back into active_filters
+    # If new topic: replace active_filters entirely with what Agent1 extracted.
+    # If follow-up: merge new filters on top of existing ones (new keys override).
     new_extracted = result.get("plan", {}).get("extracted_filters") or []
     new_filter_dict = {
         f["field"]: f["value"]
         for f in new_extracted
         if isinstance(f, dict) and f.get("field")
     }
-    merged_filters = {**state["active_filters"], **new_filter_dict}
+    if resolution.is_follow_up:
+        merged_filters = {**state["active_filters"], **new_filter_dict}
+    else:
+        # New topic — start fresh, only keep what this query introduced
+        merged_filters = new_filter_dict
 
     state["chat_history"].append({"role": "user",    "content": req.question})
     state["chat_history"].append({"role": "assistant","content": resolved_q})
