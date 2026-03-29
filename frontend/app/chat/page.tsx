@@ -367,18 +367,20 @@ export default function ChatPage() {
               {chatMode === "fast" ? "Fast Mode" : "Strict Mode"}
             </button>
 
-            {/* Debug toggle */}
-            <button
-              onClick={() => setDebugMode((prev) => !prev)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                debugMode
-                  ? "bg-amber-100 text-amber-700 border border-amber-200"
-                  : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
-              }`}
-            >
-              <Bug className="w-3.5 h-3.5" />
-              {debugMode ? "Debug ON" : "Debug OFF"}
-            </button>
+            {/* Debug toggle — admin only */}
+            {isAdmin && (
+              <button
+                onClick={() => setDebugMode((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  debugMode
+                    ? "bg-amber-100 text-amber-700 border border-amber-200"
+                    : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                }`}
+              >
+                <Bug className="w-3.5 h-3.5" />
+                {debugMode ? "Debug ON" : "Debug OFF"}
+              </button>
+            )}
 
             {/* Clear filters button */}
             <button
@@ -420,7 +422,7 @@ export default function ChatPage() {
               key={message.id}
               message={message}
               isUser={message.role === "user"}
-              debugMode={isAdmin ? true : debugMode}
+              debugMode={debugMode}
             />
           ))}
 
