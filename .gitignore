@@ -16,3 +16,4 @@ venv/
 *.parquet
 *.duckdb
 *.db
+*.wal

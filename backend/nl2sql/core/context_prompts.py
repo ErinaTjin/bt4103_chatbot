@@ -30,7 +30,12 @@ Rules:
 - Resolve pronouns and ellipsis from history (e.g., "that", "those", "what about 2022").
 - Preserve exact user intent; do not add constraints not implied by context.
 - Keep domain terms specific and explicit.
-- Inherit filters: carry forward disease and time constraints from history unless explicitly changed by the user.
+- Inherit filters by default (disease/cohort/year-range) unless explicitly changed by the user.
+- Do NOT inherit grouping dimensions by default for compare requests, especially temporal grouping.
+- In compare requests, inherit prior grouping only when BOTH are true:
+  1) previous turn has explicit categorical group-by
+  2) current turn has explicit reference wording ("those groups", "the same groups", "compare them")
+- For compare requests, never inherit temporal grouping from previous turns. Allow temporal grouping only if current turn explicitly says so (e.g., "2020 vs 2021", "by year").
 - Entity persistence: if prior turns specify ICD10-level or measurement-level entities, preserve that specificity.
 - Ellipsis resolution: rewrite short follow-ups into full standalone requests (for example, "what about 2022?" should retain the same metric and cohort with year updated).
 - If references are ambiguous, set needs_clarification=true and ask one short question.

@@ -8,9 +8,9 @@ class LLMAdapter:
         model: str = "qwen2.5-coder:7b",
         base_url: str = "http://localhost:11434",
         temperature: float = 0,
-        num_ctx: int = 8192,
-        num_predict: int = 1024,
-        timeout: int = 360,
+        num_ctx: int = 16384,
+        num_predict: int = 2500,
+        timeout: int = 240,
     ) -> None:
         self.model = model
         self.base_url = base_url.rstrip("/")

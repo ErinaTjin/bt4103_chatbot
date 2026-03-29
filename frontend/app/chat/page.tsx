@@ -3,25 +3,49 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Conversation, Message } from "@/lib/types";
-import { queryBackend, getConversations, createConversation, getConversationMessages, appendMessage } from "@/lib/api";
+import {
+  queryBackend,
+  resetSession,
+  clearSessionFilters,
+  getConversations,
+  createConversation,
+  getConversationMessages,
+  appendMessage,
+} from "@/lib/api";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ChatInput } from "@/components/ChatInput";
 import { useAuth } from "@/context/AuthContext";
-import { ChevronLeft, ChevronRight, LogOut, MessageSquare, Plus } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  MessageSquare,
+  Plus,
+  Bug,
+  RotateCcw,
+  Filter,
+} from "lucide-react";
+
+const SESSION_KEY = "anchor_session_id";
+const MESSAGES_KEY = "anchor_chat_messages";
+
+const WELCOME_MESSAGE: Message = {
+  id: "1",
+  role: "assistant",
+  content: "Hello! Ask me anything about the cancer data.",
+  timestamp: new Date().toISOString(),
+  kind: "result",
+};
 
 export default function ChatPage() {
   const router = useRouter();
   const { user, isAdmin, loading, logout } = useAuth();
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content: "Hello! Ask me anything about the cancer data.",
-      role: "assistant",
-      timestamp: new Date().toISOString(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [chatMode, setChatMode] = useState<"fast" | "strict">("fast");
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -31,6 +55,30 @@ export default function ChatPage() {
 
   // Track whether the current session already has a DB conversation created
   const activeConvIdRef = useRef<number | null>(null);
+
+  // Generate or restore session ID on mount
+  useEffect(() => {
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem(SESSION_KEY, id);
+    }
+    setSessionId(id);
+    const saved = sessionStorage.getItem(MESSAGES_KEY);
+    if (saved) {
+      try { setMessages(JSON.parse(saved)); }
+      catch { setMessages([WELCOME_MESSAGE]); }
+    } else {
+      setMessages([WELCOME_MESSAGE]);
+    }
+  }, []);
+
+  // Save messages to sessionStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+    }
+  }, [messages]);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -54,18 +102,31 @@ export default function ChatPage() {
     router.replace("/login");
   };
 
+  // Reset session: clear server-side state, generate new session ID, clear messages
+  const handleReset = async () => {
+    if (sessionId) {
+      await resetSession(sessionId);
+    }
+    const newId = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, newId);
+    sessionStorage.removeItem(MESSAGES_KEY);
+    setSessionId(newId);
+    setMessages([WELCOME_MESSAGE]);
+    setActiveConvId(null);
+    activeConvIdRef.current = null;
+  };
+
+  const handleClearFilters = async () => {
+    if (sessionId) {
+      await clearSessionFilters(sessionId);
+    }
+  };
+
   // Start a fresh chat without loading any past conversation
   const handleNewChat = () => {
     setActiveConvId(null);
     activeConvIdRef.current = null;
-    setMessages([
-      {
-        id: "1",
-        content: "Hello! Ask me anything about the cancer data.",
-        role: "assistant",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
+    setMessages([WELCOME_MESSAGE]);
   };
 
   // Load a past conversation into the chat view
@@ -101,14 +162,7 @@ export default function ChatPage() {
       setMessages(
         loaded.length > 0
           ? loaded
-          : [
-              {
-                id: "1",
-                content: "Hello! Ask me anything about the cancer data.",
-                role: "assistant",
-                timestamp: new Date().toISOString(),
-              },
-            ]
+          : [WELCOME_MESSAGE]
       );
       setActiveConvId(conv.id);
       activeConvIdRef.current = conv.id;
@@ -119,11 +173,13 @@ export default function ChatPage() {
 
   const handleSend = async (content: string) => {
     const userMessage: Message = {
-      id: Date.now().toString(),
-      content,
+      id: `${Date.now()}`,
       role: "user",
+      content,
       timestamp: new Date().toISOString(),
+      kind: "query",
     };
+
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
@@ -147,29 +203,32 @@ export default function ChatPage() {
       appendMessage(convId, "user", content).catch(console.error);
     }
 
+    // Build conversation history from existing messages
+    const conversationHistory = messages
+      .filter(m => m.id !== "1")  // exclude welcome message
+      .map(m => ({
+        role: m.role,
+        content: m.content,
+        kind: m.kind,
+      }));
+
     try {
-      const conversationHistory = messages
-        .filter((m) => m.role)
-        .map((m) => ({
-          role: m.role!,
-          content:
-            m.role === "assistant" && m.result?.query_plan?.intent_summary
-              ? m.result.query_plan.intent_summary
-              : m.content,
-          kind: m.kind,
-        }));
+      const result = await queryBackend(content, sessionId, chatMode, conversationHistory);
 
-      const result = await queryBackend(content, conversationHistory);
+      const needsClarification = Boolean(result.query_plan?.needs_clarification);
+      const clarificationQuestion = result.query_plan?.clarification_question;
 
-      const assistantContent = "Here are your results:";
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: assistantContent,
+        id: `${Date.now() + 1}`,
         role: "assistant",
+        content: needsClarification
+          ? clarificationQuestion || "Could you clarify your request?"
+          : "Here are your results:",
         result,
         timestamp: new Date().toISOString(),
-        kind: "result",
+        kind: needsClarification ? "clarification" : "result",
       };
+
       setMessages((prev) => [...prev, assistantMessage]);
 
       // Persist assistant message — store full result as JSON so it can be restored on reload
@@ -181,9 +240,9 @@ export default function ChatPage() {
       getConversations().then(setConversations).catch(console.error);
     } catch (error) {
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: "Sorry, something went wrong.",
+        id: `${Date.now() + 1}`,
         role: "assistant",
+        content: "Sorry, something went wrong.",
         result: {
           data: [],
           sql: "",
@@ -273,7 +332,7 @@ export default function ChatPage() {
       {/* ── Main area ───────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
           <div className="flex items-center space-x-2">
             {/* Toggle sidebar button */}
             <button
@@ -287,15 +346,63 @@ export default function ChatPage() {
                 <ChevronRight className="w-4 h-4" />
               )}
             </button>
-            <span className="text-sm font-semibold text-gray-700">ANCHOR</span>
+            <span className="text-sm font-semibold text-gray-700">ANCHOR Cancer Analytics</span>
             {isAdmin && (
               <span className="text-[10px] uppercase tracking-widest font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
                 Admin
               </span>
             )}
           </div>
-          <div className="flex items-center space-x-3">
-            <span className="text-xs text-gray-400">{user.username}</span>
+          <div className="flex items-center gap-2">
+            {/* Fast / Strict mode toggle */}
+            <button
+              onClick={() => setChatMode((prev) => (prev === "fast" ? "strict" : "fast"))}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                chatMode === "fast"
+                  ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                  : "bg-indigo-100 text-indigo-700 border-indigo-200"
+              }`}
+              title="fast: fewer clarifications, strict: ask for precision"
+            >
+              {chatMode === "fast" ? "Fast Mode" : "Strict Mode"}
+            </button>
+
+            {/* Debug toggle */}
+            <button
+              onClick={() => setDebugMode((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                debugMode
+                  ? "bg-amber-100 text-amber-700 border border-amber-200"
+                  : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+              }`}
+            >
+              <Bug className="w-3.5 h-3.5" />
+              {debugMode ? "Debug ON" : "Debug OFF"}
+            </button>
+
+            {/* Clear filters button */}
+            <button
+              onClick={handleClearFilters}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Clear active filters (e.g. cancer type, year) but keep chat history"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              Clear filters
+            </button>
+
+            {/* Reset session button */}
+            <button
+              onClick={handleReset}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Clear conversation and start a new session"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset
+            </button>
+
+            <span className="text-xs text-gray-400 ml-1">{user.username}</span>
             <button
               onClick={handleLogout}
               className="flex items-center space-x-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
@@ -313,7 +420,7 @@ export default function ChatPage() {
               key={message.id}
               message={message}
               isUser={message.role === "user"}
-              debugMode={isAdmin}
+              debugMode={isAdmin ? true : debugMode}
             />
           ))}
 
