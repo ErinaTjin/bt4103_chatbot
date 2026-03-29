@@ -17,7 +17,7 @@ export interface Filter {
 }
 
 export interface OutputPrefs {
-  preferred_visualization?: "bar" | "line" | "pie" | "table" | string | null;
+  preferred_visualization?: "bar" | "line" | "pie" | "metric" | "table" | string | null;
 }
 
 export interface QueryPlan {
@@ -29,6 +29,8 @@ export interface QueryPlan {
   output?: OutputPrefs;
   needs_clarification: boolean;
   clarification_question: string | null;
+  intent_summary?: string;
+  reasoning_summary?: string;
 }
 
 export interface Guardrails {
@@ -45,14 +47,33 @@ export interface QueryResponse {
   guardrails: Guardrails;
   warnings?: string[];
   error?: string;
+  metadata?: Record<string, unknown>;
+  resolved_question?: string;
 }
 
 export type Message = {
   id: string;
   content: string;
   result?: QueryResponse;
-  timestamp: Date;
+  role: "user" | "assistant";
+  timestamp: string;
+  kind?: "query" | "clarification" | "result" | "error";
 };
 
 // Helper type for table rows
 export type DataRow = Record<string, string | number>;
+
+// Past conversations / history
+export interface Conversation {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}

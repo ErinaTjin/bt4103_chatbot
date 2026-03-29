@@ -11,17 +11,17 @@
         {
           "name": "gender_source_value",
           "type": "str",
-          "description": "gender of patient: 'M' for male, 'F' for female"
+           "description": "gender of patient. Distinct values in data: 'male', 'female' (always lowercase). Use op='=' with these exact lowercase values."
         },
         {
           "name": "year_of_birth",
           "type": "int",
-          "description": "year the patient was born. To filter by age, use: YEAR(CURRENT_DATE) - year_of_birth >= <age>. To filter by diagnosis year, use condition_start_date instead."
+          "description": "year the patient was born. ALWAYS requires joining the person table — never reference year_of_birth without including person in the FROM clause. To calculate age at diagnosis use: YEAR(co.condition_start_date) - p.year_of_birth. For early-onset filter use: YEAR(co.condition_start_date) - p.year_of_birth <= 49. For 5-year age groups use: CAST(FLOOR((YEAR(co.condition_start_date) - p.year_of_birth) / 5) * 5 AS INTEGER) AS age_group_start."
         },
         {
           "name": "race_source_value",
           "type": "str",
-          "description": "race/ethnicity of patient as a text label. Values include: 'Chinese', 'Malay', 'Indian', 'Others'. Use LIKE or = to filter."
+          "description": "race/ethnicity of patient as a lowercase text label. Distinct values in data: 'chinese', 'malay', 'indian', 'filipino', 'bangladeshi', 'indonesian', 'indonesian chinese', 'vietnamese', 'other races'. Always use lowercase when filtering. Use op='=' for exact match or op='like' for partial match."
         }
       ]
     },
@@ -45,25 +45,20 @@
           "description": "date of diagnosis. When filtering for a specific year, always generate TWO filters: one with >= 'YYYY-01-01' and one with <= 'YYYY-12-31'. Only use a single bound for filtering before or after a certain year."
         },
         {
-          "name": "condition_source_value",
-          "type": "str",
-          "description": "condition stored as: topo_code||topo_description||histo_code||histo_description. e.g. 'C18.3||Hepatic flexure||8140.3||Adenocarcinoma'. Prefer filtering on ICD10 or ICDO3 columns for site/histology. If filtering this column, use op='or_like' with value=[\"%C18%\", \"%C19%\", \"%C20%\"] for all colorectal cancer. Do NOT filter using generic labels like 'colorectal cancer'."
-        },
-        {
-          "name": "ICD10",
-          "type": "str",
-          "description": "ICD-10 topography (site) code. Use this column to filter cancer site. For all colorectal cancer use op='in' with value=['C18.0','C18.1','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.8','C18.9','C19','C20']. For colon only use op='in' with C18.x and C19 codes. For rectum use op='=' with value='C20'. For a specific sub-site use op='=' with the exact code."
-        },
-        {
-          "name": "ICDO3",
-          "type": "str",
-          "description": "ICD-O-3 morphology (histology) code. Use this column to filter tumour type. Common values: '8140/3' (adenocarcinoma NOS), '8480/3' (mucinous adenocarcinoma), '8490/3' (signet ring cell carcinoma), '8263/3' (tubulovillous adenoma). Use op='like' e.g. '%8140%' to match a histology family."
-        }
+        "name": "condition_source_value",
+        "type": "str",
+        "description": "Use ONLY for histology/tumour type filtering, NOT for cancer site filtering (use ICD10 for that). Format: topo_code||topo_description||histo_code||histo_description e.g. 'C18.3||Hepatic flexure||81403.0||Adenocarcinoma, nos'. For histology filtering use op='like' with these exact patterns: '%81403.0%' for adenocarcinoma NOS, '%84803.0%' for mucinous adenocarcinoma, '%84903.0%' for signet ring cell carcinoma, '%82633.0%' for adenocarcinoma in tubulovillous adenoma. NEVER use this column to filter cancer site or colorectal cancer cohort."
+      },
+      {
+        "name": "ICD10",
+        "type": "str",
+        "description": "PRIMARY column for cancer site/type filtering. ALWAYS use this column when the question asks about cancer type, cancer site, or diagnosis. Values in dataset: 'C18.0' (cecum), 'C18.2' (ascending colon), 'C18.3' (hepatic flexure), 'C18.4' (transverse colon), 'C18.5' (splenic flexure), 'C18.6' (descending colon), 'C18.7' (sigmoid colon), 'C18.9' (colon NOS), 'C19' (rectosigmoid), 'C20' (rectum). For all colorectal cancer use op='in' with value=['C18.0','C18.2','C18.3','C18.4','C18.5','C18.6','C18.7','C18.9','C19','C20']. For colon only use C18.x and C19. For rectum use op='=' with value='C20'. When asked about cancer types or how many cancer types exist, always GROUP BY ICD10 and return COUNT(DISTINCT person_id) per ICD10 code rather than a single COUNT(DISTINCT ICD10)."
+      }
       ]
     },
 
     "procedure_occurrence": {
-      "description": "Surgery and radiotherapy procedures. Surgical rows have procedure_concept_id=NULL; radiotherapy rows have procedure_concept_id set.",
+      "description": "Surgery and radiotherapy procedures. Surgical rows have procedure_concept_id=NULL; radiotherapy rows have procedure_concept_id set. To distinguish: procedure_occurrence_id starting with 'procedure_sx_' = surgery; 'procedure_rt_' = radiotherapy.",
       "columns": [
         {
           "name": "person_id",
@@ -78,7 +73,7 @@
         {
           "name": "institution",
           "type": "str",
-          "description": "hospital/institution where the procedure was performed. Values: 'SGH', 'NCCS', 'CGH', 'SKH', 'KKH', 'NHCS'."
+          "description": "hospital/institution where the procedure was performed. Distinct values in data: 'SGH' (Singapore General Hospital), 'SKH' (Sengkang General Hospital), 'KKH' (KK Women's and Children's Hospital), 'CGH' (Changi General Hospital), 'NHC' (National Heart Centre). Empty string means institution not recorded."
         },
         {
           "name": "procedure_date",
@@ -108,7 +103,7 @@
         {
           "name": "procedure_source_value",
           "type": "str",
-          "description": "free-text description of the surgery or radiotherapy technique."
+          "description": "free-text description of surgery or radiotherapy. Values are uppercase. For liver resection use OR conditions: procedure_source_value LIKE '%LIVER%LOBECTOMY%' OR LIKE '%LIVER%WEDGE%' OR LIKE '%LIVER%SEGMENTAL%' OR LIKE '%LIVER%EXCISION%'. Do NOT match non-liver procedures. Always include LIVER in the LIKE pattern to avoid matching lung or other organ procedures."
         },
         {
           "name": "TOSP",
@@ -118,7 +113,7 @@
         {
           "name": "intent",
           "type": "str",
-          "description": "treatment intent for radiotherapy rows. Values: 'Curative', 'Palliative', 'Adjuvant'. NULL for surgical rows."
+          "description": "treatment intent for radiotherapy rows. Distinct values in data: 'Curative', 'Palliative'. Empty string for surgical rows. When filtering, use op='like' with '%Curative%' or '%Palliative%' to handle trailing whitespace in source data."
         },
         {
           "name": "delivered_dose",
@@ -134,7 +129,7 @@
     },
 
     "measurement_mutation": {
-      "description": "EAV (Entity-Attribute-Value) table storing staging, mutation, grade, and laterality measurements. Each row is one measurement type for one patient encounter. Always filter measurement_concept_name to select the measurement type.",
+      "description": "EAV (Entity-Attribute-Value) table storing staging, mutation, grade, and laterality measurements. Each row is one measurement type for one patient encounter. ALWAYS filter measurement_concept_name first to select the measurement type before reading value_as_concept_name.",
       "columns": [
         {
           "name": "person_id",
@@ -149,7 +144,7 @@
         {
           "name": "measurement_concept_name",
           "type": "str",
-          "description": "type of measurement — ALWAYS add a WHERE filter on this column to restrict to the relevant type. Use these exact values: for clinical staging use 'TNM Clin Stage Group'; for pathologic staging use 'TNM Path Stage Group'; for T/N/M components use 'TNM Clin T', 'TNM Clin N', 'TNM Clin M', 'TNM Path T', 'TNM Path N', 'TNM Path M'; for mutations use 'BRAF Mutation Conclusion', 'KRAS Mutation Conclusion', 'NRAS Mutation Conclusion', 'APC Mutation Conclusion'; for grade use 'Grade'; for laterality use 'Laterality'. If the question mentions stage without specifying clinical or pathologic, filter with IN ('TNM Clin Stage Group', 'TNM Path Stage Group'). When the question asks about multiple mutations together (e.g. KRAS, BRAF, NRAS) always use op='in' with value as a list e.g. ['KRAS Mutation Conclusion', 'BRAF Mutation Conclusion', 'NRAS Mutation Conclusion']. Never use op='=' when multiple mutations are requested. When measurement_concept_name is filtered to a mutation type, always also filter value_as_concept_name = 'mutation detected' unless the question asks for both detected and not detected. When measurement_concept_name is filtered to a stage type, filter value_as_concept_name using op='in' with the relevant stage values e.g. ['I', 'II', 'IIA', 'IIB', 'IIC'] for early stage or ['III', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC'] for advanced stage."
+          "description": "Type of measurement. ALWAYS filter this column before reading value_as_concept_name. Only 14 valid values exist in the data — NEVER use anything else:\n\nMUTATIONS (always use full name with 'Mutation Conclusion' suffix):\n- 'KRAS Mutation Conclusion', 'BRAF Mutation Conclusion', 'NRAS Mutation Conclusion', 'APC Mutation Conclusion'\n- NEVER use short names like 'KRAS', 'BRAF', 'NRAS'\n- For mutations always also filter value_as_concept_name = 'mutation detected' unless question asks about both detected and not detected\n- For multiple mutations use op='in' with a list, NEVER op='='\n- For 'among tested patients': denominator = patients with ANY record for that concept name regardless of value_as_concept_name\n\nSTAGING:\n- For general staging ALWAYS use BOTH 'TNM Path Stage Group' AND 'TNM Clin Stage Group' with COALESCE (prefer path, fallback to clin) using a CTE\n- NEVER filter on one stage type alone unless explicitly requested\n- Stage values in value_as_concept_name: 'I', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'\n- For T/N/M components use: 'TNM Clin T', 'TNM Clin N', 'TNM Clin M', 'TNM Path T', 'TNM Path N', 'TNM Path M'\n\nOTHER:\n- Grade: use 'Grade' with value_as_concept_name IN ('Grade I', 'Grade II', 'Grade III')\n- Laterality: use 'Laterality'"
         },
         {
           "name": "measurement_date",
@@ -159,7 +154,7 @@
         {
           "name": "value_as_concept_name",
           "type": "str",
-          "description": "result of the measurement. Mutation values: 'mutation detected', 'no mutation detected'. Grade values: 'Grade I', 'Grade II', 'Grade III', 'Grade/differentiation unknown, not stated, or not applicable'. Stage group values: 'I', 'II', 'IIA', 'IIB', 'IIC', 'III', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'. Laterality values: 'Not a paired site'."
+          "description": "result of the measurement. Stage values are substages: 'I', 'II', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'. To group into Roman numeral stages use CASE WHEN raw_stage = 'I' THEN 'I' WHEN raw_stage LIKE 'III%' THEN 'III' WHEN raw_stage LIKE 'II%' THEN 'II' WHEN raw_stage LIKE 'IV%' THEN 'IV' ELSE 'Unknown' END. Note: TNM Clin Stage Group only has values I, III, IIIB, IIIC, IVA, IVB, IVC, Stage Unknown — it is missing II and some substages. Mutation values: 'mutation detected', 'no mutation detected' ; Wild type = 'no mutation detected' — NEVER use 'wildtype' or 'wild-type' as these are not valid values. Grade values: 'Grade I', 'Grade II', 'Grade III', 'Grade/differentiation unknown, not stated, or not applicable'."
         },
         {
           "name": "value_source_value",
@@ -174,23 +169,23 @@
       ]
     },
 
-    "death": {
-      "description": "Death records. Always LEFT JOIN so living patients (no death record) are not excluded from counts.",
+    "death" : {
+      "description": "Death records for patients in the dataset. A record here means the patient has died — it does NOT mean they died from cancer specifically. cause_source_value may or may not be populated. For mortality questions: ALWAYS define the cancer patient cohort first using condition_occurrence, then LEFT JOIN death onto the cohort. This counts patients who died regardless of cause. Do NOT filter death_date by diagnosis year — apply date filters only to condition_start_date. For 'deaths among colorectal cancer patients': denominator = total colorectal patients in cohort, numerator = those with a non-null death_date. CRITICAL: the deaths CTE should SELECT directly FROM death table WHERE death_date IS NOT NULL — do NOT join person inside the deaths CTE. If user asks specifically about deaths CAUSED BY colorectal cancer, use cause_source_value filter and warn that this field may be incomplete.",
       "columns": [
         {
           "name": "person_id",
           "type": "int",
-          "description": "use to join to person"
+          "description": "use to join to person and to the cancer cohort CTE"
         },
         {
           "name": "death_date",
           "type": "date",
-          "description": "date of death. NULL means patient is still alive (or status unknown). To filter for deceased patients use: death_date IS NOT NULL."
+          "description": "date of death. NULL means patient is still alive (or status unknown). To filter for deceased patients use: death_date IS NOT NULL. Do NOT filter by year range — only use IS NOT NULL check."
         },
         {
           "name": "cause_source_value",
           "type": "str",
-          "description": "cause of death as recorded in source data."
+          "description": "cause of death as recorded in source data. May be NULL or incomplete — only use this field if user explicitly asks about cause of death."
         }
       ]
     },
@@ -211,27 +206,27 @@
         {
           "name": "drug_source_value",
           "type": "str",
-          "description": "prescribed drug identifier: NDC code || Gemscript code. Use drug_source_value or ATC for drug filtering."
+          "description": "prescribed drug identifier stored as: NDC_code||drug_name. Use LIKE to filter by drug name. Examples: cetuximab (Erbitux) LIKE '%cetuximab%' OR LIKE '%ERBITUX%', panitumumab (Vectibix) LIKE '%panitumumab%' OR LIKE '%VECTIBIX%'. For anti-EGFR therapy filter: drug_source_value LIKE '%cetuximab%' OR drug_source_value LIKE '%panitumumab%' OR drug_source_value LIKE '%ERBITUX%' OR drug_source_value LIKE '%VECTIBIX%'."
         },
         {
           "name": "ATC",
           "type": "str",
-          "description": "ATC (Anatomical Therapeutic Chemical) classification code for the drug. Use this for filtering by drug class or therapeutic category (e.g. 'L01' for antineoplastic agents). Use op='like' e.g. '%L01%' to match a drug class."
+          "description": "ATC classification code. Anti-EGFR drugs: cetuximab=L01FE01, panitumumab=L01FE02. For all anti-EGFR therapy use op='like' with '%L01FE%'. For antineoplastic agents use '%L01%'."
         },
         {
           "name": "drug_strength",
           "type": "str",
-          "description": "dose strength of the drug as prescribed (e.g. '500mg')."
+          "description": "dose strength of the drug as prescribed (e.g. '500mg', '25mg')."
         },
         {
           "name": "drug_form",
           "type": "str",
-          "description": "formulation/dosage form of the drug (e.g. 'Tablet', 'Injection', 'Infusion')."
+          "description": "formulation/dosage form of the drug (e.g. 'Tablet', 'Injection', 'Infusion', 'Solution')."
         },
         {
           "name": "route_source_value",
           "type": "str",
-          "description": "route of administration (e.g. 'Oral', 'Intravenous', 'Subcutaneous')."
+          "description": "route of administration. Distinct values in data: 'IV' (intravenous), 'PO' (oral), 'CIV' (continuous IV infusion), 'IVINTER' (intermittent IV), 'IV Intermi' (intermittent IV), 'IVP' (IV push), 'IVCONT' (continuous IV), 'IV BOLUS', 'IM' (intramuscular). Empty string means not recorded."
         },
         {
           "name": "quantity",
@@ -241,12 +236,12 @@
         {
           "name": "case_type",
           "type": "str",
-          "description": "clinical case type for the drug episode (e.g. 'Inpatient', 'Outpatient', 'Day Surgery')."
+           "description": "clinical case type for the drug episode. Distinct values in data: 'Outpatient', 'Inpatient'. Empty string means not recorded."
         },
         {
           "name": "drug_exposure_start_date",
           "type": "date",
-          "description": "start date of the drug prescription/administration."
+          "description": "start date of drug prescription. NOTE: may contain NULL values — when question says to include missing dates or assume drug was given, do NOT filter out NULL dates. Include all records regardless of whether drug_exposure_start_date is NULL."
         },
         {
           "name": "drug_exposure_end_date",
@@ -256,7 +251,7 @@
         {
           "name": "institution",
           "type": "str",
-          "description": "hospital/institution where the drug was prescribed. Values: 'SGH', 'NCCS', 'CGH', 'SKH', 'KKH', 'NHCS'."
+          "description": "hospital/institution where the drug was prescribed. Distinct values in data: 'NCC' (National Cancer Centre Singapore), 'SGH' (Singapore General Hospital), 'CGH' (Changi General Hospital)."
         }
       ]
     }

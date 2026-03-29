@@ -33,19 +33,29 @@ class OutputPrefs(BaseModel):
 
 class QueryPlan(BaseModel):
     intent: Intent
-    metric: str = Field(default="count_patients")
-    dimensions: List[str] = Field(default_factory=list)
-    filters: List[Filter] = Field(default_factory=list)
-    sort: List[SortOption] = Field(default_factory=list)
-    limit: int = Field(default=50)
+    metric: Optional[str] = Field(default="count_patients")
+    dimensions: Optional[List[str]] = Field(default_factory=list)
+    filters: Optional[List[Filter]] = Field(default_factory=list)
+    sort: Optional[List[SortOption]] = Field(default_factory=list)
+    limit: Optional[int] = Field(default=50)
     output: Optional[OutputPrefs] = None
 
     needs_clarification: bool = Field(default=False)
     clarification_question: Optional[str] = None
 
-    @validator("limit")
-    def _limit_positive(cls, v: int) -> int:
-        return max(1, v)
+    @validator("metric", pre=True, always=True)
+    def _metric_default(cls, v):
+        return v if v is not None else "count_patients"
+
+    @validator("dimensions", "filters", "sort", pre=True, always=True)
+    def _list_default(cls, v):
+        return v if v is not None else []
+
+    @validator("limit", pre=True, always=True)
+    def _limit_positive(cls, v) -> int:
+        if v is None:
+            return 50
+        return max(1, int(v))
 
 
 class PhysicalPlan(BaseModel):
@@ -61,6 +71,7 @@ class PhysicalPlan(BaseModel):
 
 
 class Agent1ContextSummary(BaseModel):
+    intent: Intent
     intent_summary: str
     needs_clarification: bool = False
     clarification_question: Optional[str] = None
@@ -74,10 +85,12 @@ class ContextResolution(BaseModel):
     context_summary: Optional[str] = None
     needs_clarification: bool = False
     clarification_question: Optional[str] = None
+    is_follow_up: bool = True  # False = brand new topic, active_filters should be ignored
 
 
 class Agent2SQLWriterOutput(BaseModel):
     sql: str
+    preferred_visualization: Optional[str] = None
     reasoning_summary: Optional[str] = None
     assumptions: Optional[List[str]] = None
     warnings: Optional[List[str]] = None

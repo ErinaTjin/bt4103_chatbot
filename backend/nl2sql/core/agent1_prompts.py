@@ -18,10 +18,11 @@ Active filters (already applied in UI):
 
 Return JSON in this shape:
 {{
+  "intent": "count|distribution|trend|topN|mutation_prevalence|cohort_comparison|unsupported",
   "intent_summary": "short plain-English summary of what SQL should answer",
   "needs_clarification": false,
   "clarification_question": null,
-  "extracted_filters": [{{"field": "...", "op": "=|!=|>|<|>=|<=|in|like|or_like", "value": "..."}}],
+  "extracted_filters": [{{"field": "...", "op": "=|!=|>|<|>=|<=|in|like|or_like|between", "value": "..."}}],
   "active_filters": {{"field": "value"}}
 }}
 
@@ -29,6 +30,17 @@ Rules:
 - Output JSON only.
 - Keep this lightweight: summarize intent and extract likely filters.
 - Reuse active filters as-is in active_filters.
+- Use intent='distribution' when the question asks for a breakdown using 'by X', 'for each X', or 'per X'. 
+  e.g. 'how many patients by gender' = distribution. 
+- Use intent='count' when a filter is applied to get a single number. 
+  e.g. 'how many female patients have KRAS mutations' = count (female is a filter, not a grouping).
+- 'What are the total deaths and their proportion?' → intent='count' (two scalar metrics, not a breakdown)"
+- Use intent='count' only when a single aggregate number is expected.
 - If the ask is ambiguous, set needs_clarification=true with a short clarification_question.
 - Never output SQL.
+- Valid operators are ONLY: =, !=, >, <, >=, <=, in, like, or_like
+- NEVER use op='between' — it is not supported.
+  For year or date ranges always use TWO separate filters:
+  {{"field": "year", "op": ">=", "value": "2010"}},
+  {{"field": "year", "op": "<=", "value": "2020"}}
 """

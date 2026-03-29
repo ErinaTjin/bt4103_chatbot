@@ -6,10 +6,13 @@ import {
   getCoreRowModel,
   flexRender,
   getSortedRowModel,
+  getFilteredRowModel,
   SortingState,
+  ColumnFiltersState,
   ColumnDef,
 } from "@tanstack/react-table";
 import { DataRow } from "@/lib/types";
+import { Search } from "lucide-react";
 
 interface ResultsTableProps {
   data: DataRow[];
@@ -17,6 +20,8 @@ interface ResultsTableProps {
 
 export function ResultsTable({ data }: ResultsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
 
   const columns = useMemo<ColumnDef<DataRow>[]>(() => {
     if (!data || data.length === 0) return [];
@@ -27,8 +32,12 @@ export function ResultsTable({ data }: ResultsTableProps) {
       cell: ({ getValue }) => {
         const value = getValue();
         if (typeof value === "number") {
-            if (key.includes("percentage")) {
+          if (key.includes("percentage")) {
             return `${value.toLocaleString()}%`;
+          }
+          // Don't format year columns with thousand separators
+          if (key.includes("year") || key.includes("date")) {
+            return value.toString();
           }
           return value.toLocaleString();
         }
@@ -40,16 +49,38 @@ export function ResultsTable({ data }: ResultsTableProps) {
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, columnFilters, globalFilter },
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
   });
 
   if (!data || data.length === 0) return null;
 
+  const filteredCount = table.getRowModel().rows.length;
+  const totalCount = data.length;
+
   return (
     <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-white">
+      {/* Global search bar */}
+      <div className="px-4 py-2 border-b border-gray-100 flex items-center space-x-2">
+        <Search className="w-3 h-3 text-gray-400 shrink-0" />
+        <input
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Search all columns..."
+          className="w-full text-xs text-gray-600 placeholder-gray-300 outline-none bg-transparent"
+        />
+        {globalFilter && (
+          <span className="text-[10px] text-gray-400 shrink-0">
+            {filteredCount}/{totalCount} rows
+          </span>
+        )}
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
@@ -81,21 +112,32 @@ export function ResultsTable({ data }: ResultsTableProps) {
             ))}
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className="group transition-colors hover:bg-blue-50/30"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className="px-4 py-3 text-gray-600 group-hover:text-blue-900 transition-colors"
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
+            {table.getRowModel().rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  className="px-4 py-6 text-center text-xs text-gray-400"
+                >
+                  No rows match your search
+                </td>
               </tr>
-            ))}
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="group transition-colors hover:bg-blue-50/30"
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
+                      className="px-4 py-3 text-gray-600 group-hover:text-blue-900 transition-colors"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
