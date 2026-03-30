@@ -7,7 +7,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAdmin: boolean;
   loading: boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
 }
 
@@ -28,8 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const logout = () => {
-    authLogout();
+  const logout = async () => {
+    await authLogout();
     setUser(null);
   };
 

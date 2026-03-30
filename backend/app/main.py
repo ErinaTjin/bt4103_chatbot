@@ -105,7 +105,7 @@ def health():
 # ── SQL direct endpoints ──────────────────────────────────────────────────────
 
 @app.post("/sql/execute", response_model=SQLResponse)
-def sql_execute(req: SQLRequest):
+def sql_execute(req: SQLRequest, current_user: dict = Depends(get_current_user)):
     try:
         con = duckdb_manager.con
         if con is None:
@@ -118,7 +118,7 @@ def sql_execute(req: SQLRequest):
 
 
 @app.post("/nl2sql/translate")
-def nl2sql_translate(req: NL2SQLRequest):
+def nl2sql_translate(req: NL2SQLRequest, current_user: dict = Depends(get_current_user)):
     try:
         result = nl2sql_service.translate(
             question=req.question,
@@ -143,7 +143,7 @@ def nl2sql_translate(req: NL2SQLRequest):
 
 
 @app.post("/nl2sql/execute", response_model=NL2SQLResponse)
-def nl2sql_execute(req: NL2SQLRequest):
+def nl2sql_execute(req: NL2SQLRequest, current_user: dict = Depends(get_current_user)):
     try:
         return nl2sql_service.translate_and_execute(
             question=req.question,

@@ -64,12 +64,12 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-  // Redirect non-admins after auth resolves
+  // Redirect unauthenticated users to login after auth resolves
   useEffect(() => {
-    if (!loading && (!user || !isAdmin)) {
-      router.replace("/chat");
+    if (!loading && !user) {
+      router.replace("/login");
     }
-  }, [loading, user, isAdmin, router]);
+  }, [loading, user, router]);
 
   const fetchLogs = useCallback(async () => {
     setFetching(true);
@@ -89,10 +89,30 @@ export default function AdminDashboard() {
     if (isAdmin) fetchLogs();
   }, [isAdmin, fetchLogs]);
 
-  if (loading || !user || !isAdmin) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950 text-gray-400">
         Loading…
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="flex flex-col items-center gap-4 text-center p-8 rounded-xl bg-gray-900 border border-gray-800 max-w-sm w-full">
+          <ShieldAlert size={48} className="text-red-500" />
+          <h1 className="text-2xl font-bold text-gray-100">403 Forbidden</h1>
+          <p className="text-gray-400 text-sm">
+            You don&apos;t have permission to access this page.
+          </p>
+          <button
+            onClick={() => router.push("/chat")}
+            className="mt-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+          >
+            Back to Chat
+          </button>
+        </div>
       </div>
     );
   }
@@ -157,7 +177,7 @@ export default function AdminDashboard() {
             Chat
           </button>
           <button
-            onClick={() => { logout(); router.replace("/login"); }}
+            onClick={async () => { await logout(); router.replace("/login"); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm transition-colors"
           >
             <LogOut size={14} />

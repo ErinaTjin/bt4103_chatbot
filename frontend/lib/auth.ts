@@ -45,7 +45,11 @@ export async function register(
   return { user, error: null };
 }
  
-export function logout(): void {
+export async function logout(): Promise<void> {
+  await fetch(`${BACKEND_URL}/session/reset`, {
+    method: "DELETE",
+    headers: getAuthHeader(),
+  }).catch(() => {});
   sessionStorage.removeItem(STORAGE_KEY);
 }
  

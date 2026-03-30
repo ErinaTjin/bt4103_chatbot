@@ -106,8 +106,8 @@ export default function ChatPage() {
       .finally(() => setSidebarLoading(false));
   }, [user]);
  
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     router.replace("/login");
   };
  
