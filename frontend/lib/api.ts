@@ -2,7 +2,14 @@ import { QueryResponse, Conversation, ConversationMessage } from './types';
 import { getAuthHeader } from './auth';
  
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
- 
+
+function handleUnauthorized(status: number): void { //handle 401 errors globally to auto-logout users with expired tokens
+  if (status === 401) {
+    sessionStorage.removeItem("auth_user");
+    window.location.replace("/login");
+  }
+}
+
 // ── NL2SQL chat ───────────────────────────────────────────────────────────────
 export async function queryBackend(
   message: string,
@@ -27,7 +34,7 @@ export async function queryBackend(
   clearTimeout(timeoutId);
  
   if (!response.ok) {
-    console.error('[API] Backend error:', response.status, response.statusText);
+    handleUnauthorized(response.status);
     throw new Error(`Backend error: ${response.status}`);
   }
  
