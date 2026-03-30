@@ -13,7 +13,7 @@ import {
   Brain,
   Info,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface MessageBubbleProps {
   message: Message;
@@ -29,6 +29,7 @@ export function MessageBubble({
   const [showSql, setShowSql] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
   const [showRawPlan, setShowRawPlan] = useState(false);
+  const [chartType, setChartType] = useState<string | null>(null);
 
   const visualization =
     message.result?.query_plan?.output?.preferred_visualization;
@@ -36,6 +37,34 @@ export function MessageBubble({
     visualization &&
     visualization !== "table" &&
     (message.result?.data?.length ?? 0) > 0;
+
+  // Determine all valid chart types based on data shape (including current)
+  const getValidChartTypes = (data: any[]) => {
+    if (!data || data.length === 0) return [] as string[];
+
+    const keys = Object.keys(data[0]);
+    const numeric = keys.filter((k) => typeof data[0][k] === "number");
+    const dims = keys.filter((k) => typeof data[0][k] !== "number");
+
+    const isTime = dims.some((k) => k.includes("year") || k.includes("date"));
+
+    const options: string[] = [];
+
+    if (numeric.length >= 1 && dims.length >= 1) options.push("bar");
+    if (numeric.length === 1 && dims.length === 1) options.push("pie");
+    if (isTime && numeric.length >= 1) options.push("line");
+
+    return options;
+  };
+
+  const validTypes = getValidChartTypes(message.result?.data || []);
+
+  // Initialize chart type from backend recommendation
+  useEffect(() => {
+    if (visualization) {
+      setChartType(visualization);
+    }
+  }, [visualization]);
 
   const summary =
     message.result?.data && message.result?.query_plan?.intent
@@ -56,6 +85,25 @@ export function MessageBubble({
 
   const warnings = message.result?.warnings ?? [];
   const formattedTime = new Date(message.timestamp).toLocaleTimeString();
+
+  // Simple SQL formatter for readability in debug view
+  const formatSQL = (sql: string) => {
+    if (!sql) return "";
+    return sql
+      .replace(/\s+/g, " ")
+      .replace(/\bSELECT\b/gi, "\nSELECT")
+      .replace(/\bFROM\b/gi, "\nFROM")
+      .replace(/\bWHERE\b/gi, "\nWHERE")
+      .replace(/\bGROUP BY\b/gi, "\nGROUP BY")
+      .replace(/\bORDER BY\b/gi, "\nORDER BY")
+      .replace(/\bHAVING\b/gi, "\nHAVING")
+      .replace(/\bLIMIT\b/gi, "\nLIMIT")
+      .replace(/\bJOIN\b/gi, "\nJOIN")
+      .replace(/\bLEFT JOIN\b/gi, "\nLEFT JOIN")
+      .replace(/\bRIGHT JOIN\b/gi, "\nRIGHT JOIN")
+      .replace(/\bINNER JOIN\b/gi, "\nINNER JOIN")
+      .trim();
+  };
 
   return (
     <div
@@ -100,7 +148,30 @@ export function MessageBubble({
 
             {showChart ? (
               <div className="space-y-4">
-                <ResultsChart data={message.result.data} type={visualization} />
+                {/* Chart selector: show all valid types (including current) */}
+                {validTypes.length > 0 && chartType && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">
+                      Visualization:
+                    </span>
+                    <select
+                      value={chartType}
+                      onChange={(e) => setChartType(e.target.value)}
+                      className="text-xs border rounded px-2 py-1 bg-white"
+                    >
+                      {validTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <ResultsChart
+                  data={message.result.data}
+                  type={chartType || visualization}
+                />
                 <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100/50">
                   <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-3 flex items-center">
                     <Database className="w-3 h-3 mr-1" /> Data Source
@@ -139,8 +210,8 @@ export function MessageBubble({
                           <div className="absolute top-2 right-2">
                             <Database className="w-3 h-3 text-gray-500" />
                           </div>
-                          <pre className="p-4 bg-gray-900 text-blue-300 rounded-xl text-[11px] font-mono leading-relaxed overflow-x-auto border border-gray-800">
-                            {message.result.sql}
+                          <pre className="p-4 bg-gray-900 text-blue-300 rounded-xl text-[11px] font-mono leading-relaxed overflow-x-auto border border-gray-800 whitespace-pre-wrap">
+                            {formatSQL(message.result.sql)}
                           </pre>
                         </div>
                       </div>
