@@ -328,14 +328,28 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     filters_for_engine = state["active_filters"] if resolution.is_follow_up else {}
  
     # ── Engine: Agent1 + Agent2 ──
-    result = nl2sql_service.translate_and_execute(
-        question=resolved_q,
-        conversation_history=state["chat_history"],
-        active_filters=filters_for_engine,
-        mode=req.mode,
-        row_limit=req.row_limit,
-    )
- 
+    try:
+        result = nl2sql_service.translate_and_execute(
+            question=resolved_q,
+            conversation_history=state["chat_history"],
+            active_filters=filters_for_engine,
+            mode=req.mode,
+            row_limit=req.row_limit,
+        )
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - t_start) * 1000)
+        write_audit_log(
+            user_id=user_id,
+            username=username,
+            session_id=req.session_id,
+            nl_question=req.question,
+            resolved_question=resolved_q,
+            execution_ms=elapsed_ms,
+            guardrail_decision="error",
+            error_message=str(exc),
+        )
+        raise
+
     elapsed_ms = int((time.perf_counter() - t_start) * 1000)
     data_obj = result.get("data") or {}
     row_count = data_obj.get("row_count") if isinstance(data_obj, dict) else None

@@ -137,7 +137,7 @@ export default function AdminDashboard() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  const errorLogs = logs.filter((l) => l.error_message);
+  const errorLogs = logs.filter((l) => l.error_message || l.guardrail_decision === "error");
 
   const totalQueries = logs.length;
   const blockedCount = logs.filter((l) => l.guardrail_decision === "block").length;
@@ -321,6 +321,8 @@ export default function AdminDashboard() {
                               ? "bg-red-900 text-red-300"
                               : l.guardrail_decision === "clarification"
                               ? "bg-amber-900 text-amber-300"
+                              : l.guardrail_decision === "error"
+                              ? "bg-orange-900 text-orange-300"
                               : "bg-green-900 text-green-300"
                           }`}
                         >
