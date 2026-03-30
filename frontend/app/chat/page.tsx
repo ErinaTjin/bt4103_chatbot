@@ -44,7 +44,10 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
+  const [debugMode, setDebugMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("anchor_debug_mode") === "true";
+  });
   const [chatMode, setChatMode] = useState<"fast" | "strict">("fast");
  
   // Sidebar state
@@ -79,6 +82,11 @@ export default function ChatPage() {
       sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
     }
   }, [messages]);
+
+  // Persist debug mode preference across page refreshes
+  useEffect(() => {
+    sessionStorage.setItem("anchor_debug_mode", String(debugMode));
+  }, [debugMode]);
  
   // Redirect to login if not authenticated
   useEffect(() => {
