@@ -57,6 +57,22 @@ class ContextAgent:
         conversation_history: list[dict[str, Any] | str] | None,
         active_filters: dict[str, Any] | None,
     ) -> str:
+        # Keep only the last 6 messages (3 turns) for context resolution, to avoid using too many unecessary tokens.
+        # Agent 0 only needs recent context to resolve pronouns and ellipsis.
+        recent_history = (conversation_history or [])[-6:]
+
+        # Strip to role+content only, drop any extra fields (kind, timestamp etc.)
+        # Use compact JSON (no indent) to minimise token count.
+        slim_history = []
+        for msg in recent_history:
+            if isinstance(msg, dict):
+                slim_history.append({
+                    "role": msg.get("role", ""),
+                    "content": str(msg.get("content", ""))[:300],  # cap each message at 300 chars
+                })
+            else:
+                slim_history.append({"role": "unknown", "content": str(msg)[:300]})
+
         return USER_PROMPT_TEMPLATE.format(
             question=question.strip(),
             history=json.dumps(conversation_history or [], ensure_ascii=True, indent=2),
