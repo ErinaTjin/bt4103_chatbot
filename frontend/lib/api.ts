@@ -1,4 +1,4 @@
-import { QueryResponse, Conversation, ConversationMessage } from './types';
+import { QueryResponse, Conversation, ConversationMessage, AuditLog } from './types';
 import { getAuthHeader } from './auth';
  
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -114,5 +114,19 @@ export async function appendMessage(
     body: JSON.stringify({ role, content }),
   });
   if (!res.ok) throw new Error(`Failed to append message: ${res.status}`);
+  return res.json();
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export async function getAdminLogs(limit = 200, offset = 0): Promise<AuditLog[]> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/logs?limit=${limit}&offset=${offset}`,
+    { headers: { 'Content-Type': 'application/json', ...getAuthHeader() } },
+  );
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to fetch audit logs: ${res.status}`);
+  }
   return res.json();
 }

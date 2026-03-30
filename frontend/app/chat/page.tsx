@@ -24,6 +24,7 @@ import {
   Bug,
   RotateCcw,
   Filter,
+  ShieldAlert,
 } from "lucide-react";
  
 const SESSION_KEY = "anchor_session_id";
@@ -386,6 +387,18 @@ export default function ChatPage() {
               </button>
             )}
  
+            {/* Admin dashboard link — admin only */}
+            {isAdmin && (
+              <button
+                onClick={() => router.push("/admin")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                title="Admin dashboard"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Dashboard
+              </button>
+            )}
+
             {/* Clear filters button */}
             <button
               onClick={handleClearFilters}

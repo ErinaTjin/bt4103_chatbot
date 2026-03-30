@@ -78,6 +78,23 @@ export interface ConversationMessage {
   timestamp: string;
 }
 
+// Admin audit log entry from /admin/logs
+export interface AuditLog {
+  id: number;
+  timestamp: string;
+  username: string | null;
+  session_id: string | null;
+  nl_question: string | null;
+  resolved_question: string | null;
+  generated_sql: string | null;
+  execution_ms: number | null;
+  row_count: number | null;
+  guardrail_decision: string;
+  guardrail_reasons: string; // JSON-encoded string[]
+  warnings: string;          // JSON-encoded string[]
+  error_message: string | null;
+}
+
 // Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)
 export interface ChatResponse extends QueryResponse {
   session_id: string;
