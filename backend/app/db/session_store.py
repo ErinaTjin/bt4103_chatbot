@@ -1,3 +1,5 @@
+# DEPRECATED - see auth_db.py for the new unified database schema that includes session state keyed by user_id instead of 
+# anonymous session_id. This file is no longer used but is left here for reference until we are sure the new implementation is working well.
 # app/db/session_store.py
 """
 Manages the SQLite table called 'sessions' (uses the same nl2sql_runtime.db you already have, or a dedicated sessions.db)

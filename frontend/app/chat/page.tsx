@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Conversation, Message } from "@/lib/types";
@@ -25,10 +25,10 @@ import {
   RotateCcw,
   Filter,
 } from "lucide-react";
-
+ 
 const SESSION_KEY = "anchor_session_id";
 const MESSAGES_KEY = "anchor_chat_messages";
-
+ 
 const WELCOME_MESSAGE: Message = {
   id: "1",
   role: "assistant",
@@ -36,26 +36,26 @@ const WELCOME_MESSAGE: Message = {
   timestamp: new Date().toISOString(),
   kind: "result",
 };
-
+ 
 export default function ChatPage() {
   const router = useRouter();
   const { user, isAdmin, loading, logout } = useAuth();
-
+ 
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [chatMode, setChatMode] = useState<"fast" | "strict">("fast");
-
+ 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<number | null>(null);
   const [sidebarLoading, setSidebarLoading] = useState(false);
-
+ 
   // Track whether the current session already has a DB conversation created
   const activeConvIdRef = useRef<number | null>(null);
-
+ 
   // Generate or restore session ID on mount
   useEffect(() => {
     let id = sessionStorage.getItem(SESSION_KEY);
@@ -72,21 +72,21 @@ export default function ChatPage() {
       setMessages([WELCOME_MESSAGE]);
     }
   }, []);
-
+ 
   // Save messages to sessionStorage whenever they change
   useEffect(() => {
     if (messages.length > 0) {
       sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
     }
   }, [messages]);
-
+ 
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/login");
     }
   }, [loading, user, router]);
-
+ 
   // Load conversations list once user is authenticated
   useEffect(() => {
     if (!user) return;
@@ -96,17 +96,15 @@ export default function ChatPage() {
       .catch(console.error)
       .finally(() => setSidebarLoading(false));
   }, [user]);
-
+ 
   const handleLogout = () => {
     logout();
     router.replace("/login");
   };
-
+ 
   // Reset session: clear server-side state, generate new session ID, clear messages
   const handleReset = async () => {
-    if (sessionId) {
-      await resetSession(sessionId);
-    }
+    await resetSession();  // user-keyed, no session_id needed
     const newId = crypto.randomUUID();
     sessionStorage.setItem(SESSION_KEY, newId);
     sessionStorage.removeItem(MESSAGES_KEY);
@@ -115,20 +113,18 @@ export default function ChatPage() {
     setActiveConvId(null);
     activeConvIdRef.current = null;
   };
-
+ 
   const handleClearFilters = async () => {
-    if (sessionId) {
-      await clearSessionFilters(sessionId);
-    }
+    await clearSessionFilters();  // user-keyed, no session_id needed
   };
-
+ 
   // Start a fresh chat without loading any past conversation
   const handleNewChat = () => {
     setActiveConvId(null);
     activeConvIdRef.current = null;
     setMessages([WELCOME_MESSAGE]);
   };
-
+ 
   // Load a past conversation into the chat view
   const handleSelectConversation = async (conv: Conversation) => {
     try {
@@ -170,7 +166,7 @@ export default function ChatPage() {
       console.error("Failed to load conversation messages", err);
     }
   };
-
+ 
   const handleSend = async (content: string) => {
     const userMessage: Message = {
       id: `${Date.now()}`,
@@ -179,10 +175,10 @@ export default function ChatPage() {
       timestamp: new Date().toISOString(),
       kind: "query",
     };
-
+ 
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
-
+ 
     // Ensure a conversation exists in the DB for this session
     let convId = activeConvIdRef.current;
     if (convId === null) {
@@ -197,12 +193,12 @@ export default function ChatPage() {
         console.error("Failed to create conversation", err);
       }
     }
-
+ 
     // Persist the user message
     if (convId !== null) {
       appendMessage(convId, "user", content).catch(console.error);
     }
-
+ 
     // Build conversation history from existing messages
     const conversationHistory = messages
       .filter(m => m.id !== "1")  // exclude welcome message
@@ -211,13 +207,13 @@ export default function ChatPage() {
         content: m.content,
         kind: m.kind,
       }));
-
+ 
     try {
       const result = await queryBackend(content, sessionId, chatMode, conversationHistory);
-
+ 
       const needsClarification = Boolean(result.query_plan?.needs_clarification);
       const clarificationQuestion = result.query_plan?.clarification_question;
-
+ 
       const assistantMessage: Message = {
         id: `${Date.now() + 1}`,
         role: "assistant",
@@ -228,14 +224,14 @@ export default function ChatPage() {
         timestamp: new Date().toISOString(),
         kind: needsClarification ? "clarification" : "result",
       };
-
+ 
       setMessages((prev) => [...prev, assistantMessage]);
-
+ 
       // Persist assistant message — store full result as JSON so it can be restored on reload
       if (convId !== null) {
         appendMessage(convId, "assistant", JSON.stringify(result)).catch(console.error);
       }
-
+ 
       // Refresh sidebar so updated title shows
       getConversations().then(setConversations).catch(console.error);
     } catch (error) {
@@ -268,9 +264,9 @@ export default function ChatPage() {
       setIsLoading(false);
     }
   };
-
+ 
   if (loading || !user) return null;
-
+ 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
       {/* ── Sidebar ─────────────────────────────────────────── */}
@@ -291,7 +287,7 @@ export default function ChatPage() {
             <span>New</span>
           </button>
         </div>
-
+ 
         {/* Conversation list */}
         <div className="flex-1 overflow-y-auto py-2">
           {sidebarLoading ? (
@@ -328,7 +324,7 @@ export default function ChatPage() {
           )}
         </div>
       </aside>
-
+ 
       {/* ── Main area ───────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
@@ -366,7 +362,7 @@ export default function ChatPage() {
             >
               {chatMode === "fast" ? "Fast Mode" : "Strict Mode"}
             </button>
-
+ 
             {/* Debug toggle — admin only */}
             {isAdmin && (
               <button
@@ -381,7 +377,7 @@ export default function ChatPage() {
                 {debugMode ? "Debug ON" : "Debug OFF"}
               </button>
             )}
-
+ 
             {/* Clear filters button */}
             <button
               onClick={handleClearFilters}
@@ -392,7 +388,7 @@ export default function ChatPage() {
               <Filter className="w-3.5 h-3.5" />
               Clear filters
             </button>
-
+ 
             {/* Reset session button */}
             <button
               onClick={handleReset}
@@ -403,18 +399,30 @@ export default function ChatPage() {
               <RotateCcw className="w-3.5 h-3.5" />
               Reset
             </button>
-
-            <span className="text-xs text-gray-400 ml-1">{user.username}</span>
+ 
+            {/* Profile pill */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-200">
+              <div className={"w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white " + (isAdmin ? "bg-purple-500" : "bg-blue-500")}>
+                {user.username.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex flex-col leading-none">
+                <span className="text-xs font-semibold text-gray-700">{user.username}</span>
+                <span className={"text-[9px] font-medium uppercase tracking-widest " + (isAdmin ? "text-purple-500" : "text-blue-400")}>
+                  {user.role}
+                </span>
+              </div>
+            </div>
             <button
               onClick={handleLogout}
               className="flex items-center space-x-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
+              title="Sign out"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Sign out</span>
             </button>
           </div>
         </div>
-
+ 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message) => (
@@ -425,7 +433,7 @@ export default function ChatPage() {
               debugMode={debugMode}
             />
           ))}
-
+ 
           {isLoading && (
             <div className="flex justify-start">
               <div className="bg-gray-100 rounded-lg p-4">
@@ -438,7 +446,7 @@ export default function ChatPage() {
             </div>
           )}
         </div>
-
+ 
         <ChatInput onSend={handleSend} disabled={isLoading} />
       </div>
     </div>
