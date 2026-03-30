@@ -85,6 +85,7 @@ class ContextResolution(BaseModel):
     context_summary: Optional[str] = None
     needs_clarification: bool = False
     clarification_question: Optional[str] = None
+    is_follow_up: bool = True  # False = brand new topic, active_filters should be ignored
 
 
 class Agent2SQLWriterOutput(BaseModel):

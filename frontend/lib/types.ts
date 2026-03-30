@@ -29,6 +29,8 @@ export interface QueryPlan {
   output?: OutputPrefs;
   needs_clarification: boolean;
   clarification_question: string | null;
+  intent_summary?: string;
+  reasoning_summary?: string;
 }
 
 export interface Guardrails {
@@ -60,6 +62,21 @@ export type Message = {
 
 // Helper type for table rows
 export type DataRow = Record<string, string | number>;
+
+// Past conversations / history
+export interface Conversation {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
 
 // Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)
 export interface ChatResponse extends QueryResponse {

@@ -499,7 +499,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       default: {
         // Detect cohort comparison: 2+ dimension columns before the metric
         // e.g. [gender, age_group, count_patients] → grouped bar chart
-        const numericKeys = keys.filter((k) => typeof data[0][k] === "number");
+        const numericKeys = keys.filter(k => typeof data[0][k] === "number");
         const dimensionKeys = keys.filter((k) => !numericKeys.includes(k));
         const isGrouped = dimensionKeys.length >= 2;
 

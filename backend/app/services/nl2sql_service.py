@@ -105,6 +105,7 @@ class NL2SQLService:
 
         return {
             "question": question,
+            "resolved_question": result.plan.get("resolved_question"),
             "sql": result.sql,
             "plan": result.plan,
             "plan_agent1": result.plan_agent1,

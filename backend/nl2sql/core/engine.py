@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from nl2sql.core.llm_adapter import LLMAdapter
 from nl2sql.core.agent1_extractor import Agent1QueryPlanExtractor
 from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
+from nl2sql.core.context_agent import ContextAgent
 from nl2sql.core.models import Agent1ContextSummary
 
 # DEBUG
@@ -38,6 +39,7 @@ class NL2SQLEngine:
         semantic_api: Any = None,
     ):
         self.llm = llm or LLMAdapter()
+        self.context_agent = ContextAgent(self.llm)
         self.extractor = Agent1QueryPlanExtractor(self.llm)
         self.resolver = Agent2QueryPlanResolver(self.llm)
         self.semantic_api = semantic_api
@@ -604,19 +606,49 @@ class NL2SQLEngine:
     ) -> TranslationResult:
         warnings: List[str] = []
 
-        # DEBUG 
-        log.info("=== Engine.translate START: %s", user_query) 
+        log.info("=== Engine.translate START: %s", user_query)
 
-        # Cap to last 3 turns — A0 already resolved follow-up context
+        # ── Agent 0: Context resolution ───────────────────────────────────────
+        # Resolve follow-up questions into standalone questions using history.
+        # Only runs when there is prior conversation context.
         trimmed_history = (conversation_history or [])[-6:]
+        resolved_query = user_query
+        if trimmed_history:
+            resolution = self.context_agent.resolve(
+                question=user_query,
+                conversation_history=trimmed_history,
+                active_filters=active_filters,
+            )
+            log.info("Context resolution: %s", resolution.model_dump())
+            if resolution.needs_clarification and self._should_ask_clarification(
+                mode=mode,
+                user_query=user_query,
+                clarification_question=resolution.clarification_question,
+            ):
+                return TranslationResult(
+                    sql="",
+                    plan={
+                        "needs_clarification": True,
+                        "clarification_question": resolution.clarification_question,
+                        "active_filters": active_filters or {},
+                    },
+                    valid=False,
+                    warnings=[resolution.clarification_question or "Clarification required."],
+                )
+            resolved_query = resolution.standalone_question
+            # Reset active filters if this is a brand new topic
+            if not resolution.is_follow_up:
+                active_filters = {}
+                log.info("New topic detected — active filters cleared")
+
+        # ── Agent 1: Intent extraction ────────────────────────────────────────
         agent1 = self.extractor.extract(
-            question=user_query,
-            conversation_history=trimmed_history,
+            question=resolved_query,
+            conversation_history=None,   # context already resolved by Agent0
             active_filters=active_filters,
         )
         plan_agent1 = agent1.model_dump()
 
-        # DEBUG 
         log.info("Agent1 output: %s", agent1.model_dump())
 
         if agent1.needs_clarification:
@@ -733,6 +765,7 @@ class NL2SQLEngine:
         plan = {
             "intent": agent1.intent.value,
             "intent_summary": agent1.intent_summary,
+            "resolved_question": resolved_query,
             "needs_clarification": False,
             "clarification_question": None,
             "active_filters": agent1.active_filters,
