@@ -387,18 +387,6 @@ export default function ChatPage() {
               </button>
             )}
  
-            {/* Admin dashboard link — admin only */}
-            {isAdmin && (
-              <button
-                onClick={() => router.push("/admin")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
-                title="Admin dashboard"
-              >
-                <ShieldAlert className="w-3.5 h-3.5" />
-                Dashboard
-              </button>
-            )}
-
             {/* Clear filters button */}
             <button
               onClick={handleClearFilters}
@@ -421,26 +409,39 @@ export default function ChatPage() {
               Reset
             </button>
  
-            {/* Profile pill */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-200">
-              <div className={"w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white " + (isAdmin ? "bg-purple-500" : "bg-blue-500")}>
-                {user.username.charAt(0).toUpperCase()}
+            {/* Profile pill with hover dropdown */}
+            <div className="relative group">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-200 cursor-pointer group-hover:border-gray-300 transition-colors">
+                <div className={"w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white " + (isAdmin ? "bg-purple-500" : "bg-blue-500")}>
+                  {user.username.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col leading-none">
+                  <span className="text-xs font-semibold text-gray-700">{user.username}</span>
+                  <span className={"text-[9px] font-medium uppercase tracking-widest " + (isAdmin ? "text-purple-500" : "text-blue-400")}>
+                    {user.role}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col leading-none">
-                <span className="text-xs font-semibold text-gray-700">{user.username}</span>
-                <span className={"text-[9px] font-medium uppercase tracking-widest " + (isAdmin ? "text-purple-500" : "text-blue-400")}>
-                  {user.role}
-                </span>
+              {/* Dropdown menu */}
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50 py-1">
+                {isAdmin && (
+                  <button
+                    onClick={() => router.push("/admin")}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-indigo-600 hover:bg-indigo-50 transition-colors"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    Admin Dashboard
+                  </button>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Sign out
+                </button>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center space-x-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
-              title="Sign out"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign out</span>
-            </button>
           </div>
         </div>
  
