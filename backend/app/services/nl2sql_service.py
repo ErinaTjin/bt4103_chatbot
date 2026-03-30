@@ -101,7 +101,23 @@ class NL2SQLService:
         if con is None:
             raise RuntimeError("DuckDB connection not initialized.")
 
-        data = execute_sql(con, result.sql, row_limit=row_limit)
+        try:
+            data = execute_sql(con, result.sql, row_limit=row_limit)
+        except ValueError as policy_error:
+            # sql_policy enforcement blocked the query (e.g. disallowed keyword)
+            # Return as a failed result so the caller can audit log it
+            return {
+                "question": question,
+                "sql": result.sql,
+                "plan": result.plan,
+                "plan_agent1": result.plan_agent1,
+                "plan_agent2": result.plan_agent2,
+                "warnings": [f"Query blocked by safety policy: {policy_error}"],
+                "executed": False,
+                "data": None,
+                "error": str(policy_error),
+            }
+
 
         return {
             "question": question,
