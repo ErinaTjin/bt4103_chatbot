@@ -86,4 +86,44 @@ def execute_sql(con, sql: str, row_limit: int | None = None, timeout_seconds: in
     if "error" in error_holder:
         raise error_holder["error"]
 
-    return result_holder["data"]
+    # ── Small-n suppression ──────────────────────────
+    def _apply_small_n_suppression(data: dict, k: int = 5):
+        rows = data.get("rows", [])
+        if not rows:
+            return data, False
+
+        suppressed_any = False
+
+        def _is_count_field(key: str) -> bool:
+            k_lower = key.lower()
+            return (
+                "count" in k_lower
+                or "num" in k_lower
+                or "n_" in k_lower
+                or "patients" in k_lower
+                or "cases" in k_lower
+                or "total" in k_lower
+            )
+
+        for row in rows:
+            for key, val in list(row.items()):
+                if isinstance(val, (int, float)) and _is_count_field(key):
+                    try:
+                        if val < k:
+                            row[key] = f"<{k}"
+                            suppressed_any = True
+                    except Exception:
+                        # If comparison fails for any reason, skip safely
+                        continue
+
+        return data, suppressed_any
+
+    data = result_holder["data"]
+    data, suppressed = _apply_small_n_suppression(data, k=5)
+
+    if suppressed:
+        # Attach warnings for frontend display (MessageBubble already renders warnings)
+        data.setdefault("warnings", [])
+        data["warnings"].append("Small subgroup counts have been suppressed")
+
+    return data
