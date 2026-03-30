@@ -33,9 +33,13 @@ class ChartErrorBoundary extends Component<
       return (
         <div className="flex flex-col items-center justify-center h-full space-y-2 text-gray-400">
           <AlertCircle className="w-6 h-6 text-amber-400" />
-          <p className="text-xs text-amber-600 font-medium">Chart could not be rendered</p>
+          <p className="text-xs text-amber-600 font-medium">
+            Chart could not be rendered
+          </p>
           <p className="text-[10px] text-gray-400">{this.state.errorMessage}</p>
-          <p className="text-[10px] text-gray-400">Data is shown in the table below</p>
+          <p className="text-[10px] text-gray-400">
+            Data is shown in the table below
+          </p>
         </div>
       );
     }
@@ -45,7 +49,8 @@ class ChartErrorBoundary extends Component<
 
 interface ResultsChartProps {
   data: DataRow[];
-  type: "bar" | "line" | "pie" | "stacked" | "metric" | string;
+  // Match backend exactly
+  type: "bar" | "line" | "metric" | "table" | string;
 }
 
 export function ResultsChart({ data, type }: ResultsChartProps) {
@@ -69,10 +74,13 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
   // e.g. {total_tested_patients, patients_with_kras, kras_percentage, ...}
   // Transform to long format for bar chart with percentage labels
   const isSingleRowWide = data.length === 1 && keys.length > 3;
-  const pctKeys = keys.filter(k =>
-    k.endsWith("_percentage") || k.endsWith("_pct") || k.endsWith("_proportion")
+  const pctKeys = keys.filter(
+    (k) =>
+      k.endsWith("_percentage") ||
+      k.endsWith("_pct") ||
+      k.endsWith("_proportion"),
   );
-  const totalKey = keys.find(k => k.startsWith("total_"));
+  const totalKey = keys.find((k) => k.startsWith("total_"));
 
   const formatValue = (key: string, val: number): string => {
     if (
@@ -117,24 +125,27 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
 
     // --- Wide-to-long transform (mutation prevalence / multi-attribute pivot) ---
     if (isSingleRowWide && pctKeys.length > 1 && type === "metric") {
-      const longData = pctKeys.map(pctKey => {
+      const longData = pctKeys.map((pctKey) => {
         const label = pctKey
           .replace(/_percentage$|_pct$|_proportion$/, "")
           .replace(/_/g, " ")
-          .replace(/\b\w/g, c => c.toUpperCase());
+          .replace(/\b\w/g, (c) => c.toUpperCase());
 
         // Extract base name to find paired count key
         // e.g. kras_percentage → kras → finds patients_with_kras
         const baseName = pctKey.replace(/_percentage$|_pct$|_proportion$/, "");
 
-        const countKey = keys.find(k =>
-          k !== pctKey &&
-          k !== totalKey &&
-          !k.endsWith("_percentage") &&
-          !k.endsWith("_pct") &&
-          !k.endsWith("_proportion") &&
-          !k.startsWith("total_") &&
-          (k.endsWith(`_${baseName}`) || k.includes(`_${baseName}_`) || k === baseName)
+        const countKey = keys.find(
+          (k) =>
+            k !== pctKey &&
+            k !== totalKey &&
+            !k.endsWith("_percentage") &&
+            !k.endsWith("_pct") &&
+            !k.endsWith("_proportion") &&
+            !k.startsWith("total_") &&
+            (k.endsWith(`_${baseName}`) ||
+              k.includes(`_${baseName}_`) ||
+              k === baseName),
         );
 
         return {
@@ -176,7 +187,11 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
               },
               tooltip: [
                 { field: "attribute", type: "nominal" },
-                { field: "patient_count", type: "quantitative", title: "Patients" },
+                {
+                  field: "patient_count",
+                  type: "quantitative",
+                  title: "Patients",
+                },
                 { field: "percentage", type: "quantitative", title: "%" },
               ],
             },
@@ -193,7 +208,11 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             encoding: {
               x: { field: "attribute", type: "nominal" },
               y: { field: "patient_count", type: "quantitative" },
-              text: { field: "percentage", type: "quantitative", format: ".1f" },
+              text: {
+                field: "percentage",
+                type: "quantitative",
+                format: ".1f",
+              },
               color: { value: "#666" },
             },
           },
@@ -209,10 +228,15 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           {totalKey && (
             <div className="text-center mb-2">
               <span className="text-xs text-gray-500 uppercase tracking-widest font-semibold">
-                {totalKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}:
+                {totalKey
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase())}
+                :
               </span>
               <span className="text-sm font-bold text-blue-600 ml-2">
-                {totalValue !== null ? formatValue(totalKey ?? "", totalValue) : ""}
+                {totalValue !== null
+                  ? formatValue(totalKey ?? "", totalValue)
+                  : ""}
               </span>
             </div>
           )}
@@ -256,11 +280,14 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
     // Handles cases where Agent1 classifies multi-row results as 'count'
     // e.g. count by year returns 2 rows but was classified as count intent
     if (type === "metric" && data.length > 1) {
-      const isYearDimension = keys[0].includes("year") || keys[0].includes("date");
+      const isYearDimension =
+        keys[0].includes("year") || keys[0].includes("date");
       const chartType = isYearDimension && data.length > 3 ? "line" : "bar";
 
       // Detect all numeric columns and use first one for y-axis:
-      const numericCols = keys.slice(1).filter(k => typeof data[0][k] === "number");
+      const numericCols = keys
+        .slice(1)
+        .filter((k) => typeof data[0][k] === "number");
       const yField = numericCols[0] ?? keys[1];
 
       const multiRowSpec = {
@@ -272,7 +299,9 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         mark: {
           type: chartType,
           tooltip: true,
-          ...(chartType === "bar" ? { cornerRadiusEnd: 4 } : { point: true, strokeWidth: 2 }),
+          ...(chartType === "bar"
+            ? { cornerRadiusEnd: 4 }
+            : { point: true, strokeWidth: 2 }),
         },
         encoding: {
           x: {
@@ -287,13 +316,16 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             title: null,
             scale: { zero: true },
           },
-          color: chartType === "bar" ? {
-            field: keys[0],
-            type: "nominal",
-            scale: { range: COLORS },
-            legend: null,
-          } : { value: COLORS[0] },
-          tooltip: keys.map(k => ({
+          color:
+            chartType === "bar"
+              ? {
+                  field: keys[0],
+                  type: "nominal",
+                  scale: { range: COLORS },
+                  legend: null,
+                }
+              : { value: COLORS[0] },
+          tooltip: keys.map((k) => ({
             field: k,
             type: typeof data[0][k] === "number" ? "quantitative" : "nominal",
             title: k.replace(/_/g, " "),
@@ -351,7 +383,11 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           mark: { type: "line", point: true, tooltip: true, strokeWidth: 2 },
           encoding: {
             x: { field: dimensionKey, type: "ordinal", title: null },
-            y: { field: lineMetric, type: "quantitative" as const, title: null },
+            y: {
+              field: lineMetric,
+              type: "quantitative" as const,
+              title: null,
+            },
             ...(isMultiSeries
               ? {
                   color: {
@@ -389,8 +425,18 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           },
           mark: { type: "bar", tooltip: true },
           encoding: {
-            x: { field: dimensionKey, type: "nominal", title: null, axis: { labelAngle: 0 } },
-            y: { field: stackMetric, type: "quantitative", title: null, stack: "zero" },
+            x: {
+              field: dimensionKey,
+              type: "nominal",
+              title: null,
+              axis: { labelAngle: 0 },
+            },
+            y: {
+              field: stackMetric,
+              type: "quantitative",
+              title: null,
+              stack: "zero",
+            },
             color: {
               field: stackGroupKey,
               type: "nominal",
@@ -417,7 +463,9 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                     <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-2">
                       {key.replace(/_/g, " ")}
                     </p>
-                    <p className={`font-bold text-blue-600 mb-1 ${keys.length > 3 ? "text-3xl" : "text-5xl"}`}>
+                    <p
+                      className={`font-bold text-blue-600 mb-1 ${keys.length > 3 ? "text-3xl" : "text-5xl"}`}
+                    >
                       {typeof val === "number" ? formatValue(key, val) : val}
                     </p>
                   </div>
@@ -435,7 +483,9 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                 Result
               </p>
               <p className="text-6xl font-bold text-blue-600 mb-2">
-                {typeof value === "number" ? formatValue(primaryMetric, value) : value}
+                {typeof value === "number"
+                  ? formatValue(primaryMetric, value)
+                  : value}
               </p>
               <p className="text-xs text-gray-400 uppercase tracking-widest">
                 {primaryMetric}
@@ -490,9 +540,21 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                 legend: { title: colorDim.replace(/_/g, " ") },
               },
               tooltip: [
-                { field: xDim, type: "nominal", title: xDim.replace(/_/g, " ") },
-                { field: colorDim, type: "nominal", title: colorDim.replace(/_/g, " ") },
-                { field: metric, type: "quantitative", title: metric.replace(/_/g, " ") },
+                {
+                  field: xDim,
+                  type: "nominal",
+                  title: xDim.replace(/_/g, " "),
+                },
+                {
+                  field: colorDim,
+                  type: "nominal",
+                  title: colorDim.replace(/_/g, " "),
+                },
+                {
+                  field: metric,
+                  type: "quantitative",
+                  title: metric.replace(/_/g, " "),
+                },
               ],
             },
           };
@@ -532,13 +594,28 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
 
     return (
       <ChartErrorBoundary fallbackData={data}>
-        <VegaEmbed spec={spec} options={{ actions: false }} style={{ width: '100%', height: '100%' }} />
+        <VegaEmbed
+          spec={spec}
+          options={{ actions: false }}
+          style={{ width: "100%", height: "100%" }}
+        />
       </ChartErrorBoundary>
     );
   };
 
   // Use h-auto for wide-to-long charts so they aren't clipped
-  const isWideToLong = isSingleRowWide && pctKeys.length > 1 && type === "metric";
+  const isWideToLong =
+    isSingleRowWide && pctKeys.length > 1 && type === "metric";
+
+  // Map internal type -> user-friendly label
+  const chartTypeLabelMap: Record<string, string> = {
+    line: "Line Chart",
+    bar: "Bar Chart",
+    metric: "Metric",
+    table: "Table",
+  };
+
+  const displayType = chartTypeLabelMap[type] ?? type;
 
   return (
     <div
@@ -546,6 +623,14 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         isWideToLong ? "h-auto" : "h-64"
       }`}
     >
+      {/* Visualization Type Header */}
+      <div className="mb-3">
+        <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold">
+          Visualization Type
+        </p>
+        <p className="text-sm font-semibold text-gray-800">{displayType}</p>
+      </div>
+
       {renderChart()}
     </div>
   );

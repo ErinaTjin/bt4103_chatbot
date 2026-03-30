@@ -21,12 +21,17 @@ interface MessageBubbleProps {
   debugMode?: boolean;
 }
 
-export function MessageBubble({ message, isUser = false, debugMode = false }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  isUser = false,
+  debugMode = false,
+}: MessageBubbleProps) {
   const [showSql, setShowSql] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
   const [showRawPlan, setShowRawPlan] = useState(false);
 
-  const visualization = message.result?.query_plan?.output?.preferred_visualization;
+  const visualization =
+    message.result?.query_plan?.output?.preferred_visualization;
   const showChart =
     visualization &&
     visualization !== "table" &&
@@ -46,7 +51,8 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
   const agent2 = message.result?.plan_agent2 as Record<string, any> | undefined;
   const reasoningSummary = agent2?.reasoning_summary as string | undefined;
   const assumptions = agent2?.assumptions as string[] | undefined;
-  const hasReasoning = reasoningSummary || (assumptions && assumptions.length > 0);
+  const hasReasoning =
+    reasoningSummary || (assumptions && assumptions.length > 0);
 
   const warnings = message.result?.warnings ?? [];
   const formattedTime = new Date(message.timestamp).toLocaleTimeString();
@@ -67,7 +73,9 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
         >
           {message.content}
         </p>
-        <p className={`mt-2 text-[10px] ${isUser ? "text-blue-100" : "text-gray-400"}`}>
+        <p
+          className={`mt-2 text-[10px] ${isUser ? "text-blue-100" : "text-gray-400"}`}
+        >
           {formattedTime}
         </p>
 
@@ -75,16 +83,16 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
         {!isUser &&
           message.result?.resolved_question &&
           message.result.resolved_question !== message.content && (
-          <details className="mt-2 group">
-            <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 select-none list-none flex items-center gap-1 w-fit">
-              <ChevronDown className="w-2.5 h-2.5 transition-transform group-open:rotate-180" />
-              interpreted as
-            </summary>
-            <p className="mt-1.5 text-xs text-gray-500 italic pl-3 border-l-2 border-gray-200 leading-relaxed">
-              "{message.result.resolved_question}"
-            </p>
-          </details>
-        )}
+            <details className="mt-2 group">
+              <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 select-none list-none flex items-center gap-1 w-fit">
+                <ChevronDown className="w-2.5 h-2.5 transition-transform group-open:rotate-180" />
+                interpreted as
+              </summary>
+              <p className="mt-1.5 text-xs text-gray-500 italic pl-3 border-l-2 border-gray-200 leading-relaxed">
+                "{message.result.resolved_question}"
+              </p>
+            </details>
+          )}
 
         {message.result && !message.result.error && (
           <div className="mt-6 space-y-4">
@@ -107,7 +115,6 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
             {/* Debug section — only visible when debugMode is on */}
             {debugMode && (
               <div className="pt-2 border-t border-gray-100 space-y-3">
-
                 {/* SQL toggle */}
                 {message.result.sql && (
                   <div>
@@ -161,7 +168,6 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
                     </button>
                     {showReasoning && (
                       <div className="mt-3 space-y-3 animate-in zoom-in-95 duration-200">
-
                         {/* Reasoning summary */}
                         {reasoningSummary && (
                           <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100">
@@ -182,8 +188,13 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
                             </p>
                             <ul className="space-y-1">
                               {assumptions.map((a, i) => (
-                                <li key={i} className="text-xs text-gray-700 flex items-start gap-1.5">
-                                  <span className="text-blue-400 mt-0.5">•</span>
+                                <li
+                                  key={i}
+                                  className="text-xs text-gray-700 flex items-start gap-1.5"
+                                >
+                                  <span className="text-blue-400 mt-0.5">
+                                    •
+                                  </span>
                                   {a}
                                 </li>
                               ))}
@@ -199,7 +210,10 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
                             </p>
                             <ul className="space-y-1">
                               {warnings.map((w, i) => (
-                                <li key={i} className="text-xs text-amber-700 flex items-start gap-1.5">
+                                <li
+                                  key={i}
+                                  className="text-xs text-amber-700 flex items-start gap-1.5"
+                                >
                                   <span className="mt-0.5">•</span>
                                   {w}
                                 </li>
@@ -213,7 +227,9 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
                 )}
 
                 {/* Raw agent plans — for advanced debugging */}
-                {(message.result.plan_agent1 || message.result.plan_agent2 || message.result.query_plan) && (
+                {(message.result.plan_agent1 ||
+                  message.result.plan_agent2 ||
+                  message.result.query_plan) && (
                   <div>
                     <button
                       onClick={() => setShowRawPlan(!showRawPlan)}
@@ -235,30 +251,45 @@ export function MessageBubble({ message, isUser = false, debugMode = false }: Me
                         {message.result.plan_agent1 && (
                           <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100/50">
                             <p className="text-[10px] text-blue-500 uppercase tracking-widest font-bold mb-2 flex items-center">
-                              <FileJson className="w-3 h-3 mr-1" /> Agent 1: Context Plan
+                              <FileJson className="w-3 h-3 mr-1" /> Agent 1:
+                              Context Plan
                             </p>
                             <pre className="text-[10px] text-gray-500 overflow-x-auto">
-                              {JSON.stringify(message.result.plan_agent1, null, 2)}
+                              {JSON.stringify(
+                                message.result.plan_agent1,
+                                null,
+                                2,
+                              )}
                             </pre>
                           </div>
                         )}
                         {message.result.plan_agent2 && (
                           <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100/50">
                             <p className="text-[10px] text-purple-500 uppercase tracking-widest font-bold mb-2 flex items-center">
-                              <FileJson className="w-3 h-3 mr-1" /> Agent 2: SQL Writer Plan
+                              <FileJson className="w-3 h-3 mr-1" /> Agent 2: SQL
+                              Writer Plan
                             </p>
                             <pre className="text-[10px] text-gray-500 overflow-x-auto">
-                              {JSON.stringify(message.result.plan_agent2, null, 2)}
+                              {JSON.stringify(
+                                message.result.plan_agent2,
+                                null,
+                                2,
+                              )}
                             </pre>
                           </div>
                         )}
                         {message.result.query_plan && (
                           <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                             <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2 flex items-center">
-                              <FileJson className="w-3 h-3 mr-1" /> Final Query Plan
+                              <FileJson className="w-3 h-3 mr-1" /> Final Query
+                              Plan
                             </p>
                             <pre className="text-[10px] text-gray-500 overflow-x-auto">
-                              {JSON.stringify(message.result.query_plan, null, 2)}
+                              {JSON.stringify(
+                                message.result.query_plan,
+                                null,
+                                2,
+                              )}
                             </pre>
                           </div>
                         )}
