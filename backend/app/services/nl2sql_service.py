@@ -4,7 +4,7 @@ from app.config import settings
 from nl2sql.core.engine import NL2SQLEngine
 from nl2sql.core.langgraph_pipeline import NL2SQLLangGraph
 from nl2sql.semantic.loader import SemanticLayerLoader
-from app.db.query_executor import execute_sql
+from app.db.query_executor import execute_sql, QueryTimeoutError
 from app.db.duckdb_manager import duckdb_manager
 
 # DEBUG
@@ -103,9 +103,19 @@ class NL2SQLService:
 
         try:
             data = execute_sql(con, result.sql, row_limit=row_limit)
+        except QueryTimeoutError as te:
+            return {
+                "question": question,
+                "sql": result.sql,
+                "plan": result.plan,
+                "plan_agent1": result.plan_agent1,
+                "plan_agent2": result.plan_agent2,
+                "warnings": [str(te)],
+                "executed": False,
+                "data": None,
+                "error": str(te),
+            }
         except ValueError as policy_error:
-            # sql_policy enforcement blocked the query (e.g. disallowed keyword)
-            # Return as a failed result so the caller can audit log it
             return {
                 "question": question,
                 "sql": result.sql,
@@ -118,7 +128,6 @@ class NL2SQLService:
                 "error": str(policy_error),
             }
 
-
         return {
             "question": question,
             "resolved_question": result.plan.get("resolved_question"),
@@ -130,6 +139,5 @@ class NL2SQLService:
             "executed": True,
             "data": data,
         }
-
 
 nl2sql_service = NL2SQLService()
