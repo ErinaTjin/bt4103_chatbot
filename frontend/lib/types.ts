@@ -95,6 +95,23 @@ export interface AuditLog {
   error_message: string | null;
 }
 
+export interface GuardrailCodeCount {
+  guardrail_code: string;
+  blocked_count: number;
+}
+
+export interface GuardrailDailyCount {
+  day: string;
+  guardrail_code: string;
+  blocked_count: number;
+}
+
+export interface GuardrailUserCount {
+  username: string;
+  guardrail_code: string;
+  blocked_count: number;
+}
+
 // Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)
 export interface ChatResponse extends QueryResponse {
   session_id: string;

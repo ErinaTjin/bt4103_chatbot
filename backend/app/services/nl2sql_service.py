@@ -11,6 +11,25 @@ from app.db.duckdb_manager import duckdb_manager
 import logging
 log = logging.getLogger(__name__)
 
+
+def _classify_guardrail_code(error_message: str) -> str:
+    msg = error_message.lower()
+    if "columns outside schema whitelist" in msg:
+        return "COLUMN_WHITELIST_BLOCK"
+    if "values outside schema whitelist" in msg:
+        return "VALUE_WHITELIST_BLOCK"
+    if "blocked sensitive column access" in msg:
+        return "PHI_BLOCKED_COLUMN"
+    if "select * is not allowed" in msg:
+        return "PHI_SELECT_STAR_BLOCK"
+    if "patient-level output is not allowed" in msg:
+        return "PHI_PATIENT_LEVEL_BLOCK"
+    if "unsafe output projection" in msg:
+        return "PHI_UNSAFE_PROJECTION"
+    if "healthcare validation" in msg:
+        return "HEALTHCARE_VALIDATION_BLOCK"
+    return "SAFETY_POLICY_BLOCK"
+
 class NL2SQLService:
     def __init__(self):
         self.engine = None
@@ -102,7 +121,12 @@ class NL2SQLService:
             raise RuntimeError("DuckDB connection not initialized.")
 
         try:
-            data = execute_sql(con, result.sql, row_limit=row_limit)
+            data = execute_sql(
+                con,
+                result.sql,
+                row_limit=row_limit,
+                block_on_critical_validation=(mode == "strict"),
+            )
         except QueryTimeoutError as te:
             return {
                 "question": question,
@@ -116,17 +140,25 @@ class NL2SQLService:
                 "error": str(te),
             }
         except ValueError as policy_error:
+            code = _classify_guardrail_code(str(policy_error))
             return {
                 "question": question,
                 "sql": result.sql,
                 "plan": result.plan,
                 "plan_agent1": result.plan_agent1,
                 "plan_agent2": result.plan_agent2,
-                "warnings": [f"Query blocked by safety policy: {policy_error}"],
+                "warnings": [f"[{code}] Query blocked by safety policy: {policy_error}"],
+                "guardrail_codes": [code],
                 "executed": False,
                 "data": None,
                 "error": str(policy_error),
             }
+
+        combined_warnings = list(result.warnings or [])
+        combined_warnings.extend(data.get("warnings", []))
+        combined_warnings.extend(data.get("critical_validation_errors", []))
+        # Preserve order while removing duplicates.
+        combined_warnings = list(dict.fromkeys(combined_warnings))
 
         return {
             "question": question,
@@ -135,7 +167,7 @@ class NL2SQLService:
             "plan": result.plan,
             "plan_agent1": result.plan_agent1,
             "plan_agent2": result.plan_agent2,
-            "warnings": result.warnings,
+            "warnings": combined_warnings,
             "executed": True,
             "data": data,
         }

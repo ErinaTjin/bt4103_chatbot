@@ -1,4 +1,12 @@
-import { QueryResponse, Conversation, ConversationMessage, AuditLog } from './types';
+import {
+  QueryResponse,
+  Conversation,
+  ConversationMessage,
+  AuditLog,
+  GuardrailCodeCount,
+  GuardrailDailyCount,
+  GuardrailUserCount,
+} from './types';
 import { getAuthHeader } from './auth';
  
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -129,4 +137,43 @@ export async function getAdminLogs(limit = 200, offset = 0): Promise<AuditLog[]>
     throw new Error(`Failed to fetch audit logs: ${res.status}`);
   }
   return res.json();
+}
+
+export async function getAdminGuardrailByCode(days = 30): Promise<GuardrailCodeCount[]> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/logs/guardrails/by-code?days=${days}`,
+    { headers: { 'Content-Type': 'application/json', ...getAuthHeader() } },
+  );
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to fetch guardrail by-code stats: ${res.status}`);
+  }
+  const payload = await res.json();
+  return payload.items ?? [];
+}
+
+export async function getAdminGuardrailDaily(days = 30): Promise<GuardrailDailyCount[]> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/logs/guardrails/daily?days=${days}`,
+    { headers: { 'Content-Type': 'application/json', ...getAuthHeader() } },
+  );
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to fetch guardrail daily stats: ${res.status}`);
+  }
+  const payload = await res.json();
+  return payload.items ?? [];
+}
+
+export async function getAdminGuardrailByUser(days = 30): Promise<GuardrailUserCount[]> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/logs/guardrails/by-user?days=${days}`,
+    { headers: { 'Content-Type': 'application/json', ...getAuthHeader() } },
+  );
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to fetch guardrail by-user stats: ${res.status}`);
+  }
+  const payload = await res.json();
+  return payload.items ?? [];
 }

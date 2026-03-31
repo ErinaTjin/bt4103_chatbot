@@ -20,6 +20,9 @@ from app.db.auth_db import (
     get_conn as get_auth_conn,
     load_session, save_session, reset_session, clear_filters,
     write_audit_log, get_audit_logs,
+    get_guardrail_code_distribution,
+    get_guardrail_daily_trend,
+    get_guardrail_user_distribution,
 )
 from app.models.api import (
     SQLRequest, SQLResponse, NL2SQLRequest, NL2SQLResponse,
@@ -217,6 +220,42 @@ def admin_audit_logs(
     """Return paginated audit log records. Admin only."""
     return get_audit_logs(limit=limit, offset=offset)
 
+
+@app.get("/admin/logs/guardrails/by-code")
+def admin_guardrail_by_code(
+    days: int = 30,
+    _: dict = Depends(require_admin),
+):
+    """Return blocked guardrail counts grouped by guardrail code."""
+    return {
+        "days": days,
+        "items": get_guardrail_code_distribution(days=days),
+    }
+
+
+@app.get("/admin/logs/guardrails/daily")
+def admin_guardrail_daily(
+    days: int = 30,
+    _: dict = Depends(require_admin),
+):
+    """Return daily blocked guardrail counts grouped by day and code."""
+    return {
+        "days": days,
+        "items": get_guardrail_daily_trend(days=days),
+    }
+
+
+@app.get("/admin/logs/guardrails/by-user")
+def admin_guardrail_by_user(
+    days: int = 30,
+    _: dict = Depends(require_admin),
+):
+    """Return blocked guardrail counts grouped by username and code."""
+    return {
+        "days": days,
+        "items": get_guardrail_user_distribution(days=days),
+    }
+
 # ── Conversations ─────────────────────────────────────────────────────────────
 @app.get("/conversations", response_model=list[ConversationOut])
 def list_conversations(current_user: dict = Depends(get_current_user)):
@@ -342,6 +381,15 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     warnings = result.get("warnings", [])
     generated_sql = result.get("sql", "")
     executed = result.get("executed", False)
+    guardrail_codes = result.get("guardrail_codes", [])
+
+    if not guardrail_codes:
+        for w in warnings:
+            if isinstance(w, str) and w.startswith("[") and "]" in w:
+                code = w[1:w.index("]")].strip()
+                if code:
+                    guardrail_codes.append(code)
+        guardrail_codes = list(dict.fromkeys(guardrail_codes))
  
     # Guardrail decision
     blocking = [w for w in warnings if not w.startswith("Assumption:")]
@@ -357,7 +405,7 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
         execution_ms=elapsed_ms,
         row_count=row_count,
         guardrail_decision=guardrail_decision,
-        guardrail_reasons=blocking if guardrail_decision == "block" else [],
+        guardrail_reasons=(guardrail_codes or blocking) if guardrail_decision == "block" else [],
         warnings=warnings,
         error_message=result.get("error"),
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import threading
+from datetime import datetime
 
 from app.config import settings
 from app.db.sql_policy import enforce_sql_policy
@@ -15,7 +16,107 @@ class QueryTimeoutError(Exception):
     pass
 
 
-def execute_sql(con, sql: str, row_limit: int | None = None, timeout_seconds: int | None = None):
+def _parse_iso_date(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text).date()
+        except ValueError:
+            try:
+                return datetime.strptime(text[:10], "%Y-%m-%d").date()
+            except ValueError:
+                return None
+    return None
+
+
+def _normalize_stage(value: str) -> str:
+    val = value.strip().upper().replace("STAGE", "").strip()
+    if val.startswith("UNKNOWN"):
+        return "UNKNOWN"
+    if val in {"I", "II", "III", "IV"}:
+        return val
+    for prefix in ("I", "II", "III", "IV"):
+        if val.startswith(prefix):
+            return prefix
+    return val
+
+
+def _validate_healthcare_rules(data: dict) -> tuple[list[str], list[str]]:
+    rows = data.get("rows", [])
+    if not rows:
+        return [], []
+
+    warnings: list[str] = []
+    critical: list[str] = []
+
+    # Official stage values from schema.json "STAGING" section:
+    # See: backend/nl2sql/semantic/schema.json
+    # Stage values in value_as_concept_name: 'I', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB', 'IVC', 'Stage Unknown'
+    valid_stages = {
+        "I", "IIA", "IIB", "IIC",
+        "IIIA", "IIIB", "IIIC",
+        "IVA", "IVB", "IVC",
+        "UNKNOWN", "STAGE UNKNOWN"
+    }
+
+    for idx, row in enumerate(rows, start=1):
+        lowered = {str(k).lower(): v for k, v in row.items()}
+
+        death_date = _parse_iso_date(lowered.get("death_date"))
+        birth_date = _parse_iso_date(lowered.get("birth_date"))
+
+        yob = lowered.get("year_of_birth")
+        if death_date is not None and birth_date is not None and death_date <= birth_date:
+            critical.append(
+                f"Row {idx}: death_date must be after birth_date."
+            )
+        elif death_date is not None and isinstance(yob, int) and death_date.year <= yob:
+            critical.append(
+                f"Row {idx}: death_date year must be after year_of_birth."
+            )
+
+        for key, value in lowered.items():
+            key_lower = key.lower()
+
+            if "stage" in key_lower and isinstance(value, str) and value.strip():
+                normalized = _normalize_stage(value)
+                if normalized not in valid_stages:
+                    warnings.append(
+                        f"Row {idx}: invalid staging category '{value}' in column '{key}'."
+                    )
+
+            if isinstance(value, (int, float)):
+                non_negative_field = (
+                    "count" in key_lower
+                    or "num" in key_lower
+                    or "total" in key_lower
+                    or "cases" in key_lower
+                    or "patients" in key_lower
+                    or "value" in key_lower
+                )
+                if non_negative_field and value < 0:
+                    critical.append(
+                        f"Row {idx}: negative value {value} in '{key}'."
+                    )
+
+    dedup_warnings = list(dict.fromkeys(warnings))
+    dedup_critical = list(dict.fromkeys(critical))
+    return dedup_warnings, dedup_critical
+
+
+def execute_sql(
+    con,
+    sql: str,
+    row_limit: int | None = None,
+    timeout_seconds: int | None = None,
+    block_on_critical_validation: bool = False,
+):
     """
     Execute validated SQL against DuckDB with row limit and timeout enforcement.
 
@@ -25,6 +126,9 @@ def execute_sql(con, sql: str, row_limit: int | None = None, timeout_seconds: in
         row_limit:       Max rows to return. Capped at MAX_ROWS_HARD.
         timeout_seconds: Max seconds to wait for query execution.
                          Defaults to QUERY_TIMEOUT_SECONDS from settings.
+        block_on_critical_validation:
+                 If True, critical healthcare validation findings
+                 will block output after SQL execution.
 
     Returns:
         dict with columns, rows, row_count, elapsed_ms, applied_limit.
@@ -120,6 +224,21 @@ def execute_sql(con, sql: str, row_limit: int | None = None, timeout_seconds: in
 
     data = result_holder["data"]
     data, suppressed = _apply_small_n_suppression(data, k=5)
+
+    warnings, critical = _validate_healthcare_rules(data)
+
+    if warnings:
+        data.setdefault("warnings", [])
+        data["warnings"].extend(warnings)
+
+    if critical:
+        data.setdefault("critical_validation_errors", [])
+        data["critical_validation_errors"].extend(critical)
+        if block_on_critical_validation:
+            joined = "; ".join(critical)
+            raise ValueError(
+                "Query result blocked by healthcare validation: " + joined
+            )
 
     if suppressed:
         # Attach warnings for frontend display (MessageBubble already renders warnings)

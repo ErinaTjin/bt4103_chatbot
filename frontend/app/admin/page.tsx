@@ -3,8 +3,18 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getAdminLogs } from "@/lib/api";
-import { AuditLog } from "@/lib/types";
+import {
+  getAdminLogs,
+  getAdminGuardrailByCode,
+  getAdminGuardrailDaily,
+  getAdminGuardrailByUser,
+} from "@/lib/api";
+import {
+  AuditLog,
+  GuardrailCodeCount,
+  GuardrailDailyCount,
+  GuardrailUserCount,
+} from "@/lib/types";
 import { VegaEmbed } from "react-vega";
 import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut } from "lucide-react";
 
@@ -53,6 +63,44 @@ function blockedSpec(rows: { reason: string; count: number }[]): Record<string, 
   };
 }
 
+function codeTrendSpec(rows: { day: string; code: string; count: number }[]): Record<string, unknown> {
+  return {
+    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+    data: { values: rows },
+    width: "container",
+    height: 220,
+    mark: { type: "line", point: true },
+    encoding: {
+      x: { field: "day", type: "temporal", title: "Day" },
+      y: { field: "count", type: "quantitative", title: "Blocked Count" },
+      color: { field: "code", type: "nominal", title: "Guardrail Code" },
+      tooltip: [
+        { field: "day", type: "temporal", title: "Day" },
+        { field: "code", type: "nominal", title: "Code" },
+        { field: "count", type: "quantitative", title: "Blocked" },
+      ],
+    },
+  };
+}
+
+function userCodeSpec(rows: { user: string; count: number }[]): Record<string, unknown> {
+  return {
+    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+    data: { values: rows },
+    width: "container",
+    height: 220,
+    mark: { type: "bar", color: "#22c55e" },
+    encoding: {
+      x: { field: "user", type: "nominal", title: "User", sort: "-y", axis: { labelAngle: -20 } },
+      y: { field: "count", type: "quantitative", title: "Blocked Count" },
+      tooltip: [
+        { field: "user", type: "nominal", title: "User" },
+        { field: "count", type: "quantitative", title: "Blocked" },
+      ],
+    },
+  };
+}
+
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
@@ -60,6 +108,9 @@ export default function AdminDashboard() {
   const router = useRouter();
 
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [byCode, setByCode] = useState<GuardrailCodeCount[]>([]);
+  const [daily, setDaily] = useState<GuardrailDailyCount[]>([]);
+  const [byUser, setByUser] = useState<GuardrailUserCount[]>([]);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -75,8 +126,16 @@ export default function AdminDashboard() {
     setFetching(true);
     setError(null);
     try {
-      const data = await getAdminLogs(200);
-      setLogs(data);
+      const [logsData, codeData, dailyData, userData] = await Promise.all([
+        getAdminLogs(200),
+        getAdminGuardrailByCode(30),
+        getAdminGuardrailDaily(30),
+        getAdminGuardrailByUser(30),
+      ]);
+      setLogs(logsData);
+      setByCode(codeData);
+      setDaily(dailyData);
+      setByUser(userData);
       setLastRefreshed(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load logs");
@@ -104,18 +163,26 @@ export default function AdminDashboard() {
     .map((l) => ({ time: l.timestamp, ms: l.execution_ms as number }))
     .reverse(); // oldest first for line chart
 
-  const reasonCounts: Record<string, number> = {};
-  logs
-    .filter((l) => l.guardrail_decision === "block")
-    .forEach((l) => {
-      const reasons = parseJsonField(l.guardrail_reasons);
-      const label = reasons.length > 0 ? reasons[0].slice(0, 60) : "unknown";
-      reasonCounts[label] = (reasonCounts[label] ?? 0) + 1;
-    });
-  const blockedRows = Object.entries(reasonCounts)
-    .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count)
+  const blockedRows = byCode
+    .map((x) => ({ reason: x.guardrail_code, count: x.blocked_count }))
     .slice(0, 10);
+
+  const dailyRows = daily.map((x) => ({
+    day: x.day,
+    code: x.guardrail_code,
+    count: x.blocked_count,
+  }));
+
+  const topUsers = (() => {
+    const acc: Record<string, number> = {};
+    byUser.forEach((x) => {
+      acc[x.username] = (acc[x.username] ?? 0) + x.blocked_count;
+    });
+    return Object.entries(acc)
+      .map(([user, count]) => ({ user, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  })();
 
   const errorLogs = logs.filter((l) => l.error_message);
 
@@ -210,12 +277,39 @@ export default function AdminDashboard() {
           <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
             <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
               <ShieldAlert size={15} className="text-rose-400" />
-              Blocked Queries by Reason
+              Blocked Queries by Guardrail Code
             </h2>
             {blockedRows.length === 0 ? (
               <EmptyState text="No blocked queries" />
             ) : (
               <VegaEmbed spec={blockedSpec(blockedRows)} options={{ actions: false }} style={{ width: "100%" }} />
+            )}
+          </div>
+        </div>
+
+        {/* Guardrail analytics row */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
+            <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+              <ShieldAlert size={15} className="text-cyan-400" />
+              Blocked Trend by Code (30d)
+            </h2>
+            {dailyRows.length === 0 ? (
+              <EmptyState text="No daily guardrail trend data" />
+            ) : (
+              <VegaEmbed spec={codeTrendSpec(dailyRows)} options={{ actions: false }} style={{ width: "100%" }} />
+            )}
+          </div>
+
+          <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
+            <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+              <ShieldAlert size={15} className="text-emerald-400" />
+              Top Users by Blocked Queries (30d)
+            </h2>
+            {topUsers.length === 0 ? (
+              <EmptyState text="No user-level block data" />
+            ) : (
+              <VegaEmbed spec={userCodeSpec(topUsers)} options={{ actions: false }} style={{ width: "100%" }} />
             )}
           </div>
         </div>

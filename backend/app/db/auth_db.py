@@ -9,6 +9,7 @@ data management and ensures session persistence across backend restarts. The sch
 """
 import sqlite3
 import os
+from collections import Counter, defaultdict
 from pathlib import Path
 
 # Store auth DB next to the existing runtime DB
@@ -98,7 +99,7 @@ def init_db() -> None:
 # ── Session functions (moved from session_store.py) ──────────────────────────
  
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
  
 def _empty_state() -> dict[str, Any]:
@@ -193,3 +194,112 @@ def get_audit_logs(limit: int = 200, offset: int = 0) -> list[dict]:
             (limit, offset),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _load_guardrail_rows(days: int | None = None) -> list[sqlite3.Row]:
+    query = """
+        SELECT timestamp, username, guardrail_decision, guardrail_reasons
+        FROM audit_logs
+    """
+    params: list[Any] = []
+
+    if days is not None and days > 0:
+        since_dt = datetime.now(timezone.utc) - timedelta(days=days)
+        # SQLite CURRENT_TIMESTAMP format: YYYY-MM-DD HH:MM:SS
+        since_text = since_dt.strftime("%Y-%m-%d %H:%M:%S")
+        query += " WHERE timestamp >= ?"
+        params.append(since_text)
+
+    with get_conn() as conn:
+        return conn.execute(query, params).fetchall()
+
+
+def _parse_reason_codes(guardrail_reasons: str | None) -> list[str]:
+    if not guardrail_reasons:
+        return []
+    try:
+        parsed = json.loads(guardrail_reasons)
+    except Exception:
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    out: list[str] = []
+    for item in parsed:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip())
+    return out
+
+
+def get_guardrail_code_distribution(days: int = 30) -> list[dict[str, Any]]:
+    rows = _load_guardrail_rows(days=days)
+    counts: Counter[str] = Counter()
+
+    for row in rows:
+        if row["guardrail_decision"] != "block":
+            continue
+        codes = _parse_reason_codes(row["guardrail_reasons"])
+        if not codes:
+            counts["UNKNOWN_BLOCK_REASON"] += 1
+            continue
+        for code in codes:
+            counts[code] += 1
+
+    return [
+        {"guardrail_code": code, "blocked_count": count}
+        for code, count in counts.most_common()
+    ]
+
+
+def get_guardrail_daily_trend(days: int = 30) -> list[dict[str, Any]]:
+    rows = _load_guardrail_rows(days=days)
+    daily_counts: dict[tuple[str, str], int] = defaultdict(int)
+
+    for row in rows:
+        if row["guardrail_decision"] != "block":
+            continue
+        ts = str(row["timestamp"] or "")
+        day = ts[:10] if len(ts) >= 10 else "unknown"
+
+        codes = _parse_reason_codes(row["guardrail_reasons"])
+        if not codes:
+            codes = ["UNKNOWN_BLOCK_REASON"]
+
+        for code in codes:
+            daily_counts[(day, code)] += 1
+
+    items = [
+        {"day": day, "guardrail_code": code, "blocked_count": count}
+        for (day, code), count in daily_counts.items()
+    ]
+    items.sort(key=lambda x: (x["day"], x["guardrail_code"]))
+    return items
+
+
+def get_guardrail_user_distribution(days: int = 30) -> list[dict[str, Any]]:
+    rows = _load_guardrail_rows(days=days)
+    user_code_counts: dict[tuple[str, str], int] = defaultdict(int)
+
+    for row in rows:
+        if row["guardrail_decision"] != "block":
+            continue
+
+        username = row["username"] or "unknown"
+        codes = _parse_reason_codes(row["guardrail_reasons"])
+        if not codes:
+            codes = ["UNKNOWN_BLOCK_REASON"]
+
+        for code in codes:
+            user_code_counts[(username, code)] += 1
+
+    items = [
+        {
+            "username": username,
+            "guardrail_code": code,
+            "blocked_count": count,
+        }
+        for (username, code), count in user_code_counts.items()
+    ]
+    items.sort(key=lambda x: (-x["blocked_count"], x["username"], x["guardrail_code"]))
+    return items
