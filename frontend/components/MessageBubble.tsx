@@ -48,11 +48,23 @@ export function MessageBubble({
 
     const isTime = dims.some((k) => k.includes("year") || k.includes("date"));
 
+    const isTimeDim = keys.some((k) => k.includes("year") || k.includes("date"));
+    const isMultiSeries = keys.length === 3 && isTimeDim && numeric.length === 2 &&  dims.length === 1;
+
     const options: string[] = [];
 
+    console.log("keys:", keys, "dims:", dims, "numeric:", numeric, "isTime:", isTime);
+
+     // metric — single row results
+    if (data.length === 1) options.push("metric");
+    // bar — any dims + numeric (includes grouped bar when dims >= 2)
     if (numeric.length >= 1 && dims.length >= 1) options.push("bar");
+    // pie — single dimension, single metric only
     if (numeric.length === 1 && dims.length === 1) options.push("pie");
-    if (isTime && numeric.length >= 1) options.push("line");
+    // line — time dimension OR multi-series (3-column data)
+    if ((isTime || isMultiSeries) && numeric.length >= 1) options.push("line");
+    // stacked — needs 2 dims + 1 metric
+    if (dims.length >= 2 && numeric.length >= 1) options.push("stacked");
 
     return options;
   };

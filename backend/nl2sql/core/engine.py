@@ -545,10 +545,19 @@ class NL2SQLEngine:
 
     def _fix_concat_comma(self, sql: str) -> str:
         """
-        Fix two CONCAT issues:
-        1. Missing comma after string literals: '-' CAST → '-', CAST
-        2. Mismatched quotes in separator: '-" → '-'
+        Fix CONCAT-related SQL generation bugs:
+        1. CONCAT(..., '-') || '-' || pattern → CONCAT(..., '-', ...)
+        2. Missing comma after string literals: '-' CAST → '-', CAST
+        3. Mismatched quotes in separator: '-" or "- → '-'
         """
+        # Fix CONCAT(..., '-') || '-' || next_part
+        # e.g. CONCAT(x, '-') || '-' || y  →  CONCAT(x, '-', y)
+        sql = re.sub(
+            r"CONCAT\(([^)]+),\s*'-'\s*\)\s*\|\|\s*'-'\s*\|\|\s*([^,\s][^,]*?)(\s*(?:AS\s+\w+)?(?:\s*,|\s*\n|\s*\)))",
+            r"CONCAT(\1, '-', \2\3",
+            sql,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
         # Fix mismatched quotes first
         sql = re.sub(r"'-\"", "'-'", sql)
         sql = re.sub(r'\"-\'', "'-'", sql)
