@@ -315,7 +315,7 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
             "sql": "",
             "plan": {"needs_clarification": True,
                      "clarification_question": resolution.clarification_question},
-            "plan_agent1": None, "plan_agent2": None,
+            "plan_agent0": None, "plan_agent1": None, "plan_agent2": None,
             "warnings": [resolution.clarification_question],
             "executed": False, "data": None,
             "active_filters": state["active_filters"],

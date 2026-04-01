@@ -310,7 +310,8 @@ export function MessageBubble({
                 )}
 
                 {/* Raw agent plans — for advanced debugging */}
-                {(message.result.plan_agent1 ||
+                {(message.result.plan_agent0 ||
+                  message.result.plan_agent1 ||
                   message.result.plan_agent2 ||
                   message.result.query_plan) && (
                   <div>
@@ -331,6 +332,21 @@ export function MessageBubble({
                     </button>
                     {showRawPlan && (
                       <div className="mt-3 space-y-3 animate-in zoom-in-95 duration-200">
+                        {message.result.plan_agent0 && (
+                          <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100/50">
+                            <p className="text-[10px] text-blue-500 uppercase tracking-widest font-bold mb-2 flex items-center">
+                              <FileJson className="w-3 h-3 mr-1" /> Agent 0:
+                              Question Resolver
+                            </p>
+                            <pre className="text-[10px] text-gray-500 overflow-x-auto">
+                              {JSON.stringify(
+                                message.result.plan_agent0,
+                                null,
+                                2,
+                              )}
+                            </pre>
+                          </div>
+                        )}
                         {message.result.plan_agent1 && (
                           <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100/50">
                             <p className="text-[10px] text-blue-500 uppercase tracking-widest font-bold mb-2 flex items-center">

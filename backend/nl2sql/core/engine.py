@@ -21,6 +21,7 @@ class TranslationResult:
         plan: Dict[str, Any],
         valid: bool,
         warnings: List[str],
+        plan_agent0: Dict[str, Any] | None = None,
         plan_agent1: Dict[str, Any] | None = None,
         plan_agent2: Dict[str, Any] | None = None,
     ):
@@ -28,6 +29,7 @@ class TranslationResult:
         self.plan = plan
         self.valid = valid
         self.warnings = warnings
+        self.plan_agent0 = plan_agent0
         self.plan_agent1 = plan_agent1
         self.plan_agent2 = plan_agent2
 
@@ -239,7 +241,7 @@ class NL2SQLEngine:
                 "GROUP BY co.ICD10",
                 "ORDER BY distinct_patients DESC;",
                 "",
-                "7) Early onset filter (age at diagnosis <= 49):",
+                "7) Early/Late onset filter (age at diagnosis <= 49/> 49):",
                 "-- Use this pattern for ANY cancer type, replacing the ICD10 filter as needed", 
                 "SELECT COUNT(DISTINCT p.person_id) AS case_count",
                 "FROM \"anchor_view\".\"person\" AS p",
@@ -622,6 +624,7 @@ class NL2SQLEngine:
         # Only runs when there is prior conversation context.
         trimmed_history = (conversation_history or [])[-6:]
         resolved_query = user_query
+        plan_agent0 = None
         if trimmed_history:
             resolution = self.context_agent.resolve(
                 question=user_query,
@@ -629,6 +632,7 @@ class NL2SQLEngine:
                 active_filters=active_filters,
             )
             log.info("Context resolution: %s", resolution.model_dump())
+            plan_agent0 = resolution.model_dump()
             if resolution.needs_clarification and self._should_ask_clarification(
                 mode=mode,
                 user_query=user_query,
@@ -643,6 +647,7 @@ class NL2SQLEngine:
                     },
                     valid=False,
                     warnings=[resolution.clarification_question or "Clarification required."],
+                    plan_agent0=plan_agent0,
                 )
             resolved_query = resolution.standalone_question
             # Reset active filters if this is a brand new topic
@@ -682,6 +687,7 @@ class NL2SQLEngine:
                     },
                     valid=False,
                     warnings=[agent1.clarification_question or "Clarification required."],
+                    plan_agent0=plan_agent0,
                     plan_agent1=plan_agent1,
                     plan_agent2=None,
                 )
@@ -715,6 +721,7 @@ class NL2SQLEngine:
                     },
                     valid=False,
                     warnings=[f"QueryPlan validation failed: {e}" for e in plan_errors],
+                    plan_agent0=plan_agent0,
                     plan_agent1=agent1.model_dump(),
                     plan_agent2=None,
                 )
@@ -805,6 +812,7 @@ class NL2SQLEngine:
             plan=plan,
             valid=len(blocking_issues) == 0,
             warnings=blocking_issues + warnings,
+            plan_agent0=plan_agent0,
             plan_agent1=plan_agent1,
             plan_agent2=plan_agent2,
         )

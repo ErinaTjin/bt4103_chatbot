@@ -27,6 +27,7 @@ class NL2SQLResponse(BaseModel):
     question: str
     sql: str
     plan: dict[str, Any]
+    plan_agent0: dict[str, Any] | None = None
     plan_agent1: dict[str, Any] | None = None
     plan_agent2: dict[str, Any] | None = None
     warnings: list[str]

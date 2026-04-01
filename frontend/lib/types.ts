@@ -42,6 +42,7 @@ export interface QueryResponse {
   data: Record<string, string | number>[];
   sql: string;
   query_plan: QueryPlan;
+  plan_agent0?: Context;
   plan_agent1?: QueryPlan;
   plan_agent2?: QueryPlan;
   guardrails: Guardrails;

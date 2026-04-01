@@ -49,6 +49,7 @@ export async function queryBackend(
           raw.plan?.output?.preferred_visualization ?? raw.plan?.preferred_visualization ?? null,
       },
     },
+    plan_agent0: raw.plan_agent0,
     plan_agent1: raw.plan_agent1,
     plan_agent2: raw.plan_agent2,
     guardrails: { ok: raw.warnings?.length === 0, warnings: raw.warnings ?? [] },
