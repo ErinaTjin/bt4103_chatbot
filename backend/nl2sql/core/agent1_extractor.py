@@ -2,6 +2,7 @@ import json
 import re
 from typing import Any
 
+from json_repair import repair_json
 from pydantic import ValidationError
 
 from .llm_adapter import LLMAdapter
@@ -55,9 +56,24 @@ class Agent1QueryPlanExtractor:
             # DEBUG
             log.error("Agent1 parse error: %s", e)
 
-            retry_prompt = prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."
+            # First try: structurally repair the broken JSON before retrying the LLM
+            try:
+                repaired = repair_json(self._clean_json(raw))
+                return Agent1ContextSummary.model_validate_json(repaired)
+            except (ValidationError, json.JSONDecodeError, Exception) as repair_err:
+                log.warning("Agent1 repair failed (%s), falling back to LLM retry", repair_err)
+
+            retry_prompt = prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text. Ensure all objects and arrays are properly closed."
             raw_retry = self.llm.generate(prompt=retry_prompt, system=SYSTEM_PROMPT)
-            return Agent1ContextSummary.model_validate_json(self._clean_json(raw_retry))
+
+            try:
+                return Agent1ContextSummary.model_validate_json(self._clean_json(raw_retry))
+            except (ValidationError, json.JSONDecodeError) as retry_err:
+                log.error("Agent1 retry parse error: %s", retry_err)
+                # Last resort: repair the retry output too
+                repaired_retry = repair_json(self._clean_json(raw_retry))            
+
+            return Agent1ContextSummary.model_validate_json(self._clean_json(repaired_retry))
 
     @staticmethod
     def _clean_json(text: str) -> str:

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from nl2sql.core.llm_adapter import LLMAdapter
 from nl2sql.core.agent1_extractor import Agent1QueryPlanExtractor
 from nl2sql.core.agent2_resolver import Agent2QueryPlanResolver
+from nl2sql.core.context_agent import ContextAgent
 from nl2sql.core.models import Agent1ContextSummary
 
 # DEBUG
@@ -20,6 +21,7 @@ class TranslationResult:
         plan: Dict[str, Any],
         valid: bool,
         warnings: List[str],
+        plan_agent0: Dict[str, Any] | None = None,
         plan_agent1: Dict[str, Any] | None = None,
         plan_agent2: Dict[str, Any] | None = None,
     ):
@@ -27,6 +29,7 @@ class TranslationResult:
         self.plan = plan
         self.valid = valid
         self.warnings = warnings
+        self.plan_agent0 = plan_agent0
         self.plan_agent1 = plan_agent1
         self.plan_agent2 = plan_agent2
 
@@ -38,6 +41,7 @@ class NL2SQLEngine:
         semantic_api: Any = None,
     ):
         self.llm = llm or LLMAdapter()
+        self.context_agent = ContextAgent(self.llm)
         self.extractor = Agent1QueryPlanExtractor(self.llm)
         self.resolver = Agent2QueryPlanResolver(self.llm)
         self.semantic_api = semantic_api
@@ -237,7 +241,7 @@ class NL2SQLEngine:
                 "GROUP BY co.ICD10",
                 "ORDER BY distinct_patients DESC;",
                 "",
-                "7) Early onset filter (age at diagnosis <= 49):",
+                "7) Early/Late onset filter (age at diagnosis <= 49/> 49):",
                 "-- Use this pattern for ANY cancer type, replacing the ICD10 filter as needed", 
                 "SELECT COUNT(DISTINCT p.person_id) AS case_count",
                 "FROM \"anchor_view\".\"person\" AS p",
@@ -543,10 +547,19 @@ class NL2SQLEngine:
 
     def _fix_concat_comma(self, sql: str) -> str:
         """
-        Fix two CONCAT issues:
-        1. Missing comma after string literals: '-' CAST → '-', CAST
-        2. Mismatched quotes in separator: '-" → '-'
+        Fix CONCAT-related SQL generation bugs:
+        1. CONCAT(..., '-') || '-' || pattern → CONCAT(..., '-', ...)
+        2. Missing comma after string literals: '-' CAST → '-', CAST
+        3. Mismatched quotes in separator: '-" or "- → '-'
         """
+        # Fix CONCAT(..., '-') || '-' || next_part
+        # e.g. CONCAT(x, '-') || '-' || y  →  CONCAT(x, '-', y)
+        sql = re.sub(
+            r"CONCAT\(([^)]+),\s*'-'\s*\)\s*\|\|\s*'-'\s*\|\|\s*([^,\s][^,]*?)(\s*(?:AS\s+\w+)?(?:\s*,|\s*\n|\s*\)))",
+            r"CONCAT(\1, '-', \2\3",
+            sql,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
         # Fix mismatched quotes first
         sql = re.sub(r"'-\"", "'-'", sql)
         sql = re.sub(r'\"-\'', "'-'", sql)
@@ -604,19 +617,52 @@ class NL2SQLEngine:
     ) -> TranslationResult:
         warnings: List[str] = []
 
-        # DEBUG 
-        log.info("=== Engine.translate START: %s", user_query) 
+        log.info("=== Engine.translate START: %s", user_query)
 
-        # Cap to last 3 turns — A0 already resolved follow-up context
+        # ── Agent 0: Context resolution ───────────────────────────────────────
+        # Resolve follow-up questions into standalone questions using history.
+        # Only runs when there is prior conversation context.
         trimmed_history = (conversation_history or [])[-6:]
+        resolved_query = user_query
+        plan_agent0 = None
+        if trimmed_history:
+            resolution = self.context_agent.resolve(
+                question=user_query,
+                conversation_history=trimmed_history,
+                active_filters=active_filters,
+            )
+            log.info("Context resolution: %s", resolution.model_dump())
+            plan_agent0 = resolution.model_dump()
+            if resolution.needs_clarification and self._should_ask_clarification(
+                mode=mode,
+                user_query=user_query,
+                clarification_question=resolution.clarification_question,
+            ):
+                return TranslationResult(
+                    sql="",
+                    plan={
+                        "needs_clarification": True,
+                        "clarification_question": resolution.clarification_question,
+                        "active_filters": active_filters or {},
+                    },
+                    valid=False,
+                    warnings=[resolution.clarification_question or "Clarification required."],
+                    plan_agent0=plan_agent0,
+                )
+            resolved_query = resolution.standalone_question
+            # Reset active filters if this is a brand new topic
+            if not resolution.is_follow_up:
+                active_filters = {}
+                log.info("New topic detected — active filters cleared")
+
+        # ── Agent 1: Intent extraction ────────────────────────────────────────
         agent1 = self.extractor.extract(
-            question=user_query,
-            conversation_history=trimmed_history,
+            question=resolved_query,
+            conversation_history=None,   # context already resolved by Agent0
             active_filters=active_filters,
         )
         plan_agent1 = agent1.model_dump()
 
-        # DEBUG 
         log.info("Agent1 output: %s", agent1.model_dump())
 
         if agent1.needs_clarification:
@@ -641,6 +687,7 @@ class NL2SQLEngine:
                     },
                     valid=False,
                     warnings=[agent1.clarification_question or "Clarification required."],
+                    plan_agent0=plan_agent0,
                     plan_agent1=plan_agent1,
                     plan_agent2=None,
                 )
@@ -674,6 +721,7 @@ class NL2SQLEngine:
                     },
                     valid=False,
                     warnings=[f"QueryPlan validation failed: {e}" for e in plan_errors],
+                    plan_agent0=plan_agent0,
                     plan_agent1=agent1.model_dump(),
                     plan_agent2=None,
                 )
@@ -733,6 +781,7 @@ class NL2SQLEngine:
         plan = {
             "intent": agent1.intent.value,
             "intent_summary": agent1.intent_summary,
+            "resolved_question": resolved_query,
             "needs_clarification": False,
             "clarification_question": None,
             "active_filters": agent1.active_filters,
@@ -763,6 +812,7 @@ class NL2SQLEngine:
             plan=plan,
             valid=len(blocking_issues) == 0,
             warnings=blocking_issues + warnings,
+            plan_agent0=plan_agent0,
             plan_agent1=plan_agent1,
             plan_agent2=plan_agent2,
         )

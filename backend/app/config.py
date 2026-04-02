@@ -18,5 +18,6 @@ class Settings(BaseModel):
     MAX_ROWS_HARD: int = 20000
     THREADS: int = 4
     PARQUET_KEY: str = os.getenv("PARQUET_KEY", "")
+    QUERY_TIMEOUT_SECONDS: int = 180 #max execution time for SQL queries
 
 settings = Settings()

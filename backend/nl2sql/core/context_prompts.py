@@ -20,7 +20,8 @@ Return JSON in this shape:
   "standalone_question": "self-contained question with references resolved",
   "context_summary": "optional short summary of resolved context",
   "needs_clarification": false,
-  "clarification_question": null
+  "clarification_question": null,
+  "is_follow_up": true
 }}
 
 Rules:
@@ -38,4 +39,6 @@ Rules:
 - Entity persistence: if prior turns specify ICD10-level or measurement-level entities, preserve that specificity.
 - Ellipsis resolution: rewrite short follow-ups into full standalone requests (for example, "what about 2022?" should retain the same metric and cohort with year updated).
 - If references are ambiguous, set needs_clarification=true and ask one short question.
+- Set is_follow_up=false when the question introduces a completely new topic with no dependency on prior turns (e.g. switches cancer type, asks about a totally different dimension, or explicitly says "new question").
+  Set is_follow_up=true for all other cases including refinements, comparisons, and ellipsis resolution.
 """

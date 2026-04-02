@@ -12,6 +12,13 @@ const COLORS = [
   "#FF8042",
   "#8884d8",
   "#82ca9d",
+  "#59d8dd",
+  "#6e758c",
+  "#e99fff",
+  "#ff2894",
+  "#f92010",
+  "#ffc2e0",
+  "#e0fe5c",
 ];
 
 // Error boundary to catch Vega-Lite render failures gracefully
@@ -50,7 +57,7 @@ class ChartErrorBoundary extends Component<
 interface ResultsChartProps {
   data: DataRow[];
   // Match backend exactly
-  type: "bar" | "line" | "metric" | "table" | string;
+  type: "bar" | "line" | "pie" | "stacked" | "metric" | string;
 }
 
 export function ResultsChart({ data, type }: ResultsChartProps) {
@@ -353,6 +360,8 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       case "pie":
         spec = {
           ...spec,
+          height: 300,
+          autosize: "pad",
           mark: { type: "arc", innerRadius: 0, outerRadius: 80, tooltip: true },
           encoding: {
             theta: { field: primaryMetric, type: "quantitative" },
@@ -376,13 +385,15 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
 
         spec = {
           ...spec,
+          height: 250, 
+          autosize: "pad",
           config: {
             ...(spec.config as object),
             axisY: { grid: true, gridDash: [3, 3] }, // Y grid only
           },
           mark: { type: "line", point: true, tooltip: true, strokeWidth: 2 },
           encoding: {
-            x: { field: dimensionKey, type: "ordinal", title: null },
+            x: { field: dimensionKey, type: "ordinal", title: null, axis: { labelAngle: 0} },
             y: {
               field: lineMetric,
               type: "quantitative" as const,
@@ -499,7 +510,12 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       default: {
         // Detect cohort comparison: 2+ dimension columns before the metric
         // e.g. [gender, age_group, count_patients] → grouped bar chart
-        const numericKeys = keys.filter((k) => typeof data[0][k] === "number");
+        // Treat year/date columns as dimensions even when numeric
+        const isYearOrDate = (k: string) =>
+          k.includes("year") || k.includes("date") || k.includes("_start") || k.includes("_end");
+        const numericKeys = keys.filter(
+          (k) => typeof data[0][k] === "number" && !isYearOrDate(k)
+        );
         const dimensionKeys = keys.filter((k) => !numericKeys.includes(k));
         const isGrouped = dimensionKeys.length >= 2;
 
@@ -509,8 +525,18 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           const colorDim = dimensionKeys[1];
           const metric = numericKeys[0] ?? primaryMetric;
 
+          // Use ordinal for numeric year/date fields — nominal breaks Vega-Lite rendering
+          const xType = isYearOrDate(xDim) ? "ordinal" : "nominal";
+          // Convert year/date to string for consistent ordinal rendering
+          const chartData = data.map(row => ({
+            ...row,
+            ...(isYearOrDate(xDim) ? { [xDim]: String(row[xDim]) } : {}),
+          }));
+
           spec = {
             ...spec,
+            data: { values: chartData },
+            padding: { bottom: 40 },
             config: {
               ...(spec.config as object),
               axisY: { grid: true, gridDash: [3, 3] },
@@ -519,9 +545,9 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             encoding: {
               x: {
                 field: xDim,
-                type: "nominal",
+                type: xType,
                 title: null,
-                axis: { labelAngle: -30 },
+                axis: { labelAngle: -45, labelOverlap: false },
               },
               xOffset: {
                 // side-by-side grouping within each x category
@@ -562,6 +588,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           // Simple single-dimension bar chart (original behaviour)
           spec = {
             ...spec,
+            padding: { bottom: 40 },
             config: {
               ...(spec.config as object),
               axisY: { grid: true, gridDash: [3, 3] },
@@ -572,7 +599,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
                 field: dimensionKey,
                 type: "nominal",
                 title: null,
-                axis: { labelAngle: -30 },
+                axis: { labelAngle: -45, labelOverlap: false, labelLimit: 80 },
               },
               y: { field: primaryMetric, type: "quantitative", title: null },
               color: {
@@ -619,8 +646,10 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
 
   return (
     <div
-      className={`w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm overflow-hidden ${
-        isWideToLong ? "h-auto" : "h-64"
+      className={`w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm ${
+        isWideToLong || type === "metric" || type === "pie" || type === "line" || type === "stacked" 
+          ? "h-auto overflow-hidden" 
+          : "h-72 overflow-visible"
       }`}
     >
       {/* Visualization Type Header */}
