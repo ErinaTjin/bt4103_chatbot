@@ -29,6 +29,7 @@ export function MessageBubble({
   const [showSql, setShowSql] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
   const [showRawPlan, setShowRawPlan] = useState(false);
+  const [showAllDataSource, setShowAllDataSource] = useState(false);
   const [chartType, setChartType] = useState<string | null>(null);
 
   const visualization =
@@ -188,15 +189,37 @@ export function MessageBubble({
                   <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-3 flex items-center">
                     <Database className="w-3 h-3 mr-1" /> Data Source
                   </p>
-                  <ResultsTable data={message.result.data} />
+                  <ResultsTable
+                    data={
+                      showAllDataSource
+                        ? message.result.data
+                        : message.result.data.slice(0, 3)
+                    }
+                  />
+                  {message.result.data.length > 3 && (
+                    <button
+                      onClick={() => setShowAllDataSource(!showAllDataSource)}
+                      className="mt-2 text-[10px] text-blue-500 hover:text-blue-700 font-medium flex items-center gap-1"
+                    >
+                      {showAllDataSource ? (
+                        <>
+                          <ChevronUp className="w-3 h-3" /> Show less
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-3 h-3" /> Show all rows
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
               <ResultsTable data={message.result.data} />
             )}
 
-            {/* Debug section — only visible when debugMode is on */}
-            {debugMode && (
+            {/* Debug section — only visible for admin when debugMode is on */}
+            {debugMode && !isUser && (
               <div className="pt-2 border-t border-gray-100 space-y-3">
                 {/* SQL toggle */}
                 {message.result.sql && (
