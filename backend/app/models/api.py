@@ -35,11 +35,12 @@ class NL2SQLResponse(BaseModel):
     data: SQLResponse | None = None
 
 class ChatRequest(BaseModel):
-    session_id: str
+    session_id: str           # frontend UUID, used for audit log tracing only
+    conversation_id: int      # DB conversation_id — keys the session state
     question: str
-    mode: Literal["fast", "strict"] = "fast"   # ← add this
+    mode: Literal["fast", "strict"] = "fast"
     row_limit: int | None = Field(default=None, ge=1)
-
+ 
 class ChatResponse(NL2SQLResponse):
     session_id: str
     resolved_question: str   # what Agent 0 produced

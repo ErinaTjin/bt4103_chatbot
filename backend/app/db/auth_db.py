@@ -50,13 +50,14 @@ def init_db() -> None:
                 timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Sessions keyed by user_id so they survive backend restarts
-        # and persist per-user across logins (until explicit reset)
+        # Sessions keyed by conversation_id — each conversation has its own
+        # isolated NL2SQL state (active_filters, chat_history for Agent 0).
+        # This prevents different conversations from sharing session memory.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
-                user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                state      TEXT    NOT NULL DEFAULT '{}',
-                updated_at TEXT    NOT NULL
+                conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+                state           TEXT    NOT NULL DEFAULT '{}',
+                updated_at      TEXT    NOT NULL
             )
         """)
         # Audit log — one row per query attempt
@@ -108,38 +109,58 @@ def _empty_state() -> dict[str, Any]:
         "last_sql": None,
         "warnings": [],
     }
- 
- 
-def load_session(user_id: int) -> dict[str, Any]:
+
+def load_session(conversation_id: int) -> dict[str, Any]:
+    """Load NL2SQL session state for a specific conversation."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT state FROM sessions WHERE user_id = ?", (user_id,)
+            "SELECT state FROM sessions WHERE conversation_id = ?", (conversation_id,)
         ).fetchone()
     if row is None:
         return _empty_state()
     return json.loads(row["state"])
  
  
-def save_session(user_id: int, state: dict[str, Any]) -> None:
+def save_session(conversation_id: int, state: dict[str, Any]) -> None:
+    """Save NL2SQL session state for a specific conversation."""
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO sessions (user_id, state, updated_at) VALUES (?, ?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET state=excluded.state, updated_at=excluded.updated_at""",
-            (user_id, json.dumps(state), now),
+            """INSERT INTO sessions (conversation_id, state, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(conversation_id) DO UPDATE
+               SET state=excluded.state, updated_at=excluded.updated_at""",
+            (conversation_id, json.dumps(state), now),
         )
         conn.commit()
  
  
-def reset_session(user_id: int) -> None:
-    save_session(user_id, _empty_state())
+def reset_session(conversation_id: int) -> None:
+    """Clear session state for a conversation (keeps audit log intact)."""
+    save_session(conversation_id, _empty_state())
  
  
-def clear_filters(user_id: int) -> dict[str, Any]:
-    state = load_session(user_id)
+def clear_filters(conversation_id: int) -> dict[str, Any]:
+    """Clear only active_filters for a conversation, keeping chat_history."""
+    state = load_session(conversation_id)
     state["active_filters"] = {}
-    save_session(user_id, state)
+    save_session(conversation_id, state)
     return state
+ 
+ 
+def delete_conversation(conversation_id: int, user_id: int) -> bool:
+    """
+    Hard-delete a conversation and all its messages and session state.
+    Session row is deleted via CASCADE. Audit logs are preserved (ON DELETE SET NULL).
+    Returns True if a row was deleted, False if not found or not owned by user.
+    """
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM conversations WHERE id = ? AND user_id = ?",
+            (conversation_id, user_id),
+        )
+        conn.commit()
+    return cur.rowcount > 0
+
  
 # ── Audit log functions ───────────────────────────────────────────────────────
  

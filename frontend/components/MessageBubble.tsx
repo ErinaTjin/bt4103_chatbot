@@ -97,7 +97,10 @@ export function MessageBubble({
     reasoningSummary || (assumptions && assumptions.length > 0);
 
   const warnings = message.result?.warnings ?? [];
-  const formattedTime = new Date(message.timestamp).toLocaleTimeString();
+  const formattedTime = new Date(
+  message.timestamp.includes("T") ? message.timestamp : message.timestamp.replace(" ", "T") + "Z"
+).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
 
   // Simple SQL formatter for readability in debug view
   const formatSQL = (sql: string) => {

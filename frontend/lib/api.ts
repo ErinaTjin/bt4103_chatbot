@@ -14,6 +14,7 @@ function handleUnauthorized(status: number): void { //handle 401 errors globally
 export async function queryBackend(
   message: string,
   sessionId: string,
+  conversationId: number,
   mode: "fast" | "strict" = "fast",
   conversationHistory: Array<{ role: string; content: string; kind?: string }> = [],
 ): Promise<QueryResponse> {
@@ -25,6 +26,7 @@ export async function queryBackend(
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
     body: JSON.stringify({
       session_id: sessionId,
+      conversation_id: conversationId,
       question: message,
       mode,
       conversation_history: conversationHistory,
@@ -63,18 +65,20 @@ export async function queryBackend(
  
 // ── Session (now user-keyed, requires auth) ───────────────────────────────────
  
-export async function resetSession(): Promise<void> {
-  await fetch(`${BACKEND_URL}/session/reset`, {
+export async function resetSession(convId: number): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/session/${convId}/reset`, {
     method: "DELETE",
     headers: { ...getAuthHeader() },
   });
+  if (!res.ok) handleUnauthorized(res.status);
 }
  
-export async function clearSessionFilters(): Promise<void> {
-  await fetch(`${BACKEND_URL}/session/filters`, {
+export async function clearSessionFilters(convId: number): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/session/${convId}/filters`, {
     method: "PATCH",
     headers: { ...getAuthHeader() },
   });
+  if (!res.ok) handleUnauthorized(res.status);
 }
  
 // ── Conversations ─────────────────────────────────────────────────────────────
@@ -116,6 +120,17 @@ export async function appendMessage(
   });
   if (!res.ok) throw new Error(`Failed to append message: ${res.status}`);
   return res.json();
+}
+
+export async function deleteConversation(convId: number): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/conversations/${convId}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeader() },
+  });
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to delete conversation: ${res.status}`);
+  }
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

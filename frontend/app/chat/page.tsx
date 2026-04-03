@@ -11,6 +11,7 @@ import {
   createConversation,
   getConversationMessages,
   appendMessage,
+  deleteConversation,
 } from "@/lib/api";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ChatInput } from "@/components/ChatInput";
@@ -25,13 +26,14 @@ import {
   RotateCcw,
   Filter,
   ShieldAlert,
+  Trash2,
 } from "lucide-react";
  
+// Per-tab unique ID used only for audit log tracing — not for session state
 const SESSION_KEY = "anchor_session_id";
-const MESSAGES_KEY = "anchor_chat_messages";
  
 const WELCOME_MESSAGE: Message = {
-  id: "1",
+  id: "welcome",
   role: "assistant",
   content: "Hello! Ask me anything about the cancer data.",
   timestamp: new Date().toISOString(),
@@ -42,25 +44,40 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, isAdmin, loading, logout } = useAuth();
  
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [sessionId, setSessionId] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [debugMode, setDebugMode] = useState<boolean>(() => {
+  const [messages, setMessages]     = useState<Message[]>([WELCOME_MESSAGE]);
+  const [sessionId, setSessionId]   = useState<string>("");
+  // Track loading per conversation so switching chats doesn't show dots
+  // in the wrong conversation and doesn't disable the input globally.
+  const [loadingConvIds, setLoadingConvIds] = useState<Set<number | "new">>(new Set());
+
+  const setConvLoading = (key: number | "new", loading: boolean) => {
+    setLoadingConvIds((prev) => {
+      const next = new Set(prev);
+      if (loading) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
+  const [debugMode, setDebugMode]   = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("anchor_debug_mode") === "true";
   });
-  const [chatMode, setChatMode] = useState<"fast" | "strict">("fast");
+  const [chatMode, setChatMode]     = useState<"fast" | "strict">("fast");
  
-  // Sidebar state
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConvId, setActiveConvId] = useState<number | null>(null);
+  // Sidebar
+  const [sidebarOpen, setSidebarOpen]       = useState(true);
+  const [conversations, setConversations]   = useState<Conversation[]>([]);
+  const [activeConvId, setActiveConvId]     = useState<number | null>(null);
   const [sidebarLoading, setSidebarLoading] = useState(false);
+  const [deletingId, setDeletingId]         = useState<number | null>(null);
  
-  // Track whether the current session already has a DB conversation created
+  // Derived: is the currently viewed conversation loading?
+  const activeKey = activeConvId ?? "new";
+  const isLoading = loadingConvIds.has(activeKey);  // derived, not stored
+  
+  // Ref so handleSend always sees current conv ID without stale closure
   const activeConvIdRef = useRef<number | null>(null);
  
-  // Generate or restore session ID on mount
+  // ── Session ID (audit tracing only) ──────────────────────────────────────
   useEffect(() => {
     let id = sessionStorage.getItem(SESSION_KEY);
     if (!id) {
@@ -68,78 +85,105 @@ export default function ChatPage() {
       sessionStorage.setItem(SESSION_KEY, id);
     }
     setSessionId(id);
-    const saved = sessionStorage.getItem(MESSAGES_KEY);
-    if (saved) {
-      try { setMessages(JSON.parse(saved)); }
-      catch { setMessages([WELCOME_MESSAGE]); }
-    } else {
-      setMessages([WELCOME_MESSAGE]);
-    }
   }, []);
  
-  // Save messages to sessionStorage whenever they change
-  useEffect(() => {
-    if (messages.length > 0) {
-      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
-    }
-  }, [messages]);
-
-  // Persist debug mode preference across page refreshes
+  // ── Persist debug mode ────────────────────────────────────────────────────
   useEffect(() => {
     sessionStorage.setItem("anchor_debug_mode", String(debugMode));
   }, [debugMode]);
  
-  // Redirect to login if not authenticated
+  // ── Redirect if not authenticated ─────────────────────────────────────────
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
+    if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
  
-  // Load conversations list once user is authenticated
+  // ── Load sidebar + auto-restore most recent conversation on login ─────────
   useEffect(() => {
     if (!user) return;
     setSidebarLoading(true);
     getConversations()
-      .then(setConversations)
+      .then(async (convs) => {
+        setConversations(convs);
+        // Auto-restore the most recent conversation so the user lands back
+        // where they left off. The NL2SQL session state (active_filters,
+        // Agent 0 chat_history) is already persisted in the DB — it will
+        // be loaded by the backend on the next query automatically.
+        if (convs.length > 0 && activeConvIdRef.current === null) {
+          const latest = convs[0]; // ORDER BY created_at DESC from backend
+          try {
+            const storedMsgs = await getConversationMessages(latest.id);
+            const loaded: Message[] = storedMsgs.map((m) => {
+              if (m.role === "assistant") {
+                try {
+                  const result = JSON.parse(m.content);
+                  if (result && typeof result === "object" && "sql" in result) {
+                    return {
+                      id: m.id.toString(),
+                      content: "Here are your results:",
+                      role: m.role as "user" | "assistant",
+                      result,
+                      timestamp: m.timestamp,
+                      kind: "result" as const,
+                    };
+                  }
+                } catch { /* plain text */ }
+              }
+              return {
+                id: m.id.toString(),
+                content: m.content,
+                role: m.role as "user" | "assistant",
+                timestamp: m.timestamp,
+              };
+            });
+            setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
+            setActiveConvId(latest.id);
+            activeConvIdRef.current = latest.id;
+          } catch (err) {
+            console.error("Failed to auto-restore conversation", err);
+          }
+        }
+      })
       .catch(console.error)
       .finally(() => setSidebarLoading(false));
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
  
   const handleLogout = async () => {
     await logout();
     router.replace("/login");
   };
  
-  // Reset session: clear server-side state, generate new session ID, clear messages
+  // ── Reset: clears session state for current conv + clears the displayed
+  //    messages. The conversation record is kept in the sidebar so the user
+  //    can still see the title, but messages and NL2SQL session are gone.
   const handleReset = async () => {
-    await resetSession();  // user-keyed, no session_id needed
-    const newId = crypto.randomUUID();
-    sessionStorage.setItem(SESSION_KEY, newId);
-    sessionStorage.removeItem(MESSAGES_KEY);
-    setSessionId(newId);
+    const convId = activeConvIdRef.current;
+    if (convId !== null) {
+      await resetSession(convId);
+    }
     setMessages([WELCOME_MESSAGE]);
-    setActiveConvId(null);
-    activeConvIdRef.current = null;
   };
  
   const handleClearFilters = async () => {
-    await clearSessionFilters();  // user-keyed, no session_id needed
+    const convId = activeConvIdRef.current;
+    if (convId !== null) {
+      await clearSessionFilters(convId);
+    }
   };
  
-  // Start a fresh chat without loading any past conversation
+  // ── New chat: sets up a blank view; DB conversation created on first send ─
   const handleNewChat = () => {
     setActiveConvId(null);
     activeConvIdRef.current = null;
     setMessages([WELCOME_MESSAGE]);
   };
  
-  // Load a past conversation into the chat view
+  // ── Select a past conversation from the sidebar ───────────────────────────
   const handleSelectConversation = async (conv: Conversation) => {
+    // Already viewing this conversation — do nothing
+    if (conv.id === activeConvIdRef.current) return;
     try {
       const storedMsgs = await getConversationMessages(conv.id);
       const loaded: Message[] = storedMsgs.map((m) => {
-        // Assistant messages are stored as JSON-serialised QueryResponse
         if (m.role === "assistant") {
           try {
             const result = JSON.parse(m.content);
@@ -154,28 +198,52 @@ export default function ChatPage() {
               };
             }
           } catch {
-            // not JSON — fall through to plain text
+            // plain text — fall through
           }
         }
         return {
           id: m.id.toString(),
           content: m.content,
-          role: m.role,
+          role: m.role as "user" | "assistant",
           timestamp: m.timestamp,
         };
       });
-      setMessages(
-        loaded.length > 0
-          ? loaded
-          : [WELCOME_MESSAGE]
-      );
+ 
+      setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
       setActiveConvId(conv.id);
       activeConvIdRef.current = conv.id;
     } catch (err) {
       console.error("Failed to load conversation messages", err);
     }
   };
+
+  // ── Delete a conversation from the sidebar ────────────────────────────────
+  const handleDeleteConversation = async (
+    e: React.MouseEvent,
+    conv: Conversation,
+  ) => {
+    e.stopPropagation(); // prevent triggering handleSelectConversation
+    if (!confirm(`Delete "${conv.title}"? This cannot be undone.`)) return;
  
+    setDeletingId(conv.id);
+    try {
+      await deleteConversation(conv.id);
+      // Remove from sidebar list
+      setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+      // If the deleted conversation was active, start a fresh view
+      if (activeConvIdRef.current === conv.id) {
+        setActiveConvId(null);
+        activeConvIdRef.current = null;
+        setMessages([WELCOME_MESSAGE]);
+      }
+    } catch (err) {
+      console.error("Failed to delete conversation", err);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // ── Send a message ────────────────────────────────────────────────────────
   const handleSend = async (content: string) => {
     const userMessage: Message = {
       id: `${Date.now()}`,
@@ -186,9 +254,9 @@ export default function ChatPage() {
     };
  
     setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
  
-    // Ensure a conversation exists in the DB for this session
+    // Create a conversation in the DB on the first message of a new chat.
+    // Do this BEFORE marking loading so the key is correct.
     let convId = activeConvIdRef.current;
     if (convId === null) {
       try {
@@ -196,29 +264,38 @@ export default function ChatPage() {
         convId = created.id;
         activeConvIdRef.current = convId;
         setActiveConvId(convId);
-        // Refresh sidebar list
         getConversations().then(setConversations).catch(console.error);
       } catch (err) {
         console.error("Failed to create conversation", err);
+        return;
       }
     }
  
-    // Persist the user message
-    if (convId !== null) {
-      appendMessage(convId, "user", content).catch(console.error);
-    }
+    // Mark THIS conversation as loading — not a global flag
+    setConvLoading(convId, true);
  
-    // Build conversation history from existing messages
+    // Snapshot the convId this query belongs to.
+    // After the async LLM call resolves, we check whether the user has
+    // switched to a different conversation. If they have, we skip the
+    // setMessages call so we don't overwrite the wrong conversation's view.
+    const queryConvId = convId;
+ 
+    // Persist user message to DB
+    appendMessage(convId, "user", content).catch(console.error);
+ 
+    // Build history for Agent 0 context (exclude welcome message)
     const conversationHistory = messages
-      .filter(m => m.id !== "1")  // exclude welcome message
-      .map(m => ({
-        role: m.role,
-        content: m.content,
-        kind: m.kind,
-      }));
+      .filter((m) => m.id !== "welcome")
+      .map((m) => ({ role: m.role, content: m.content, kind: m.kind }));
  
     try {
-      const result = await queryBackend(content, sessionId, chatMode, conversationHistory);
+      const result = await queryBackend(
+        content,
+        sessionId,
+        convId,
+        chatMode,
+        conversationHistory,
+      );
  
       const needsClarification = Boolean(result.query_plan?.needs_clarification);
       const clarificationQuestion = result.query_plan?.clarification_question;
@@ -234,14 +311,16 @@ export default function ChatPage() {
         kind: needsClarification ? "clarification" : "result",
       };
  
-      setMessages((prev) => [...prev, assistantMessage]);
- 
-      // Persist assistant message — store full result as JSON so it can be restored on reload
-      if (convId !== null) {
-        appendMessage(convId, "assistant", JSON.stringify(result)).catch(console.error);
+      // Only update the displayed messages if the user is still viewing
+      // the same conversation that originated this query.
+      if (activeConvIdRef.current === queryConvId) {
+        setMessages((prev) => [...prev, assistantMessage]);
       }
  
-      // Refresh sidebar so updated title shows
+      // Always persist to DB regardless of which view is active
+      appendMessage(queryConvId, "assistant", JSON.stringify(result)).catch(console.error);
+ 
+      // Refresh sidebar title
       getConversations().then(setConversations).catch(console.error);
     } catch (error) {
       const errorMessage: Message = {
@@ -261,16 +340,20 @@ export default function ChatPage() {
             clarification_question: null,
           },
           guardrails: { ok: false, warnings: [] },
-          error: error instanceof Error && error.name === "AbortError"
-            ? "Request timed out — the query was too complex or the model took too long. Try rephrasing or breaking it into a simpler question."
-            : "Failed to connect to server. Make sure the backend is running.",
+          error:
+            error instanceof Error && error.name === "AbortError"
+              ? "Request timed out — the query was too complex or the model took too long."
+              : "Failed to connect to server. Make sure the backend is running.",
         },
         timestamp: new Date().toISOString(),
         kind: "error",
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      // Only show error in the conversation it belongs to
+      if (activeConvIdRef.current === queryConvId) {
+        setMessages((prev) => [...prev, errorMessage]);
+      }
     } finally {
-      setIsLoading(false);
+      setConvLoading(queryConvId, false);
     }
   };
  
@@ -286,7 +369,9 @@ export default function ChatPage() {
       >
         {/* Sidebar header */}
         <div className="flex items-center justify-between px-3 py-3 border-b border-gray-100">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">History</span>
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+            History
+          </span>
           <button
             onClick={handleNewChat}
             title="New chat"
@@ -305,30 +390,47 @@ export default function ChatPage() {
             <p className="px-3 py-2 text-xs text-gray-400">No past conversations.</p>
           ) : (
             conversations.map((conv) => (
-              <button
+              <div
                 key={conv.id}
-                onClick={() => handleSelectConversation(conv)}
-                className={`w-full text-left px-3 py-2 rounded-md mx-1 my-0.5 transition-colors group ${
+                className={`group flex items-center mx-1 my-0.5 rounded-md transition-colors ${
                   activeConvId === conv.id
                     ? "bg-blue-50 text-blue-700"
                     : "text-gray-700 hover:bg-gray-100"
                 }`}
                 style={{ width: "calc(100% - 8px)" }}
               >
-                <div className="flex items-start space-x-2">
-                  <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-gray-400 group-hover:text-gray-500" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium truncate leading-snug">{conv.title}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      {new Date(conv.created_at).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </p>
+                {/* Clickable area — load conversation */}
+                <button
+                  onClick={() => handleSelectConversation(conv)}
+                  className="flex-1 text-left px-3 py-2 min-w-0"
+                >
+                  <div className="flex items-start space-x-2">
+                    <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-gray-400 group-hover:text-gray-500" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate leading-snug">
+                        {conv.title}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {new Date(conv.created_at).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+ 
+                {/* Delete button — only visible on hover */}
+                <button
+                  onClick={(e) => handleDeleteConversation(e, conv)}
+                  disabled={deletingId === conv.id}
+                  title="Delete conversation"
+                  className="opacity-0 group-hover:opacity-100 flex-shrink-0 p-1.5 mr-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-40"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             ))
           )}
         </div>
@@ -339,7 +441,6 @@ export default function ChatPage() {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
           <div className="flex items-center space-x-2">
-            {/* Toggle sidebar button */}
             <button
               onClick={() => setSidebarOpen((v) => !v)}
               title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
@@ -351,7 +452,9 @@ export default function ChatPage() {
                 <ChevronRight className="w-4 h-4" />
               )}
             </button>
-            <span className="text-sm font-semibold text-gray-700">ANCHOR Cancer Analytics</span>
+            <span className="text-sm font-semibold text-gray-700">
+              ANCHOR Cancer Analytics
+            </span>
             {isAdmin && (
               <span className="text-[10px] uppercase tracking-widest font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
                 Admin
@@ -359,9 +462,11 @@ export default function ChatPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Fast / Strict mode toggle */}
+            {/* Fast / Strict mode */}
             <button
-              onClick={() => setChatMode((prev) => (prev === "fast" ? "strict" : "fast"))}
+              onClick={() =>
+                setChatMode((prev) => (prev === "fast" ? "strict" : "fast"))
+              }
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                 chatMode === "fast"
                   ? "bg-emerald-100 text-emerald-700 border-emerald-200"
@@ -387,10 +492,10 @@ export default function ChatPage() {
               </button>
             )}
  
-            {/* Clear filters button */}
+            {/* Clear filters */}
             <button
               onClick={handleClearFilters}
-              disabled={isLoading}
+              disabled={isLoading || activeConvId === null}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="Clear active filters (e.g. cancer type, year) but keep chat history"
             >
@@ -398,31 +503,42 @@ export default function ChatPage() {
               Clear filters
             </button>
  
-            {/* Reset session button */}
+            {/* Reset session */}
             <button
               onClick={handleReset}
-              disabled={isLoading}
+              disabled={isLoading || activeConvId === null}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Clear conversation and start a new session"
+              title="Reset session memory for this conversation"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset
             </button>
  
-            {/* Profile pill with hover dropdown */}
+            {/* Profile pill with dropdown */}
             <div className="relative group">
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-200 cursor-pointer group-hover:border-gray-300 transition-colors">
-                <div className={"w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white " + (isAdmin ? "bg-purple-500" : "bg-blue-500")}>
+                <div
+                  className={
+                    "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white " +
+                    (isAdmin ? "bg-purple-500" : "bg-blue-500")
+                  }
+                >
                   {user.username.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col leading-none">
-                  <span className="text-xs font-semibold text-gray-700">{user.username}</span>
-                  <span className={"text-[9px] font-medium uppercase tracking-widest " + (isAdmin ? "text-purple-500" : "text-blue-400")}>
+                  <span className="text-xs font-semibold text-gray-700">
+                    {user.username}
+                  </span>
+                  <span
+                    className={
+                      "text-[9px] font-medium uppercase tracking-widest " +
+                      (isAdmin ? "text-purple-500" : "text-blue-400")
+                    }
+                  >
                     {user.role}
                   </span>
                 </div>
               </div>
-              {/* Dropdown menu */}
               <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50 py-1">
                 {isAdmin && (
                   <button
@@ -461,8 +577,14 @@ export default function ChatPage() {
               <div className="bg-gray-100 rounded-lg p-4">
                 <div className="flex space-x-2">
                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }} />
+                  <div
+                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.2s" }}
+                  />
+                  <div
+                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.4s" }}
+                  />
                 </div>
               </div>
             </div>

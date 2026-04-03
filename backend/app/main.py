@@ -19,7 +19,7 @@ from app.db.auth_db import (
     init_db as init_auth_db,
     get_conn as get_auth_conn,
     load_session, save_session, reset_session, clear_filters,
-    write_audit_log, get_audit_logs,
+    write_audit_log, get_audit_logs, delete_conversation,
 )
 from app.models.api import (
     SQLRequest, SQLResponse, NL2SQLRequest, NL2SQLResponse,
@@ -284,15 +284,26 @@ resetting the session and clearing filters through additional endpoints."""
 @app.post("/nl2sql/chat", response_model=ChatResponse)
 def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
-    Session is now keyed by user_id, not an anonymous session_id.
-    The session_id field in ChatRequest is kept for frontend compatibility
-    but the authoritative state is loaded by user_id from auth.db.
+    Session is keyed by conversation_id — each conversation has its own isolated
+    NL2SQL state (active_filters, chat_history for Agent 0).
+    This prevents different conversations from sharing session memory.
     """
-    user_id = current_user["id"]
+    user_id  = current_user["id"]
     username = current_user["username"]
-    t_start = time.perf_counter()
+    conv_id  = req.conversation_id
+    t_start  = time.perf_counter()
  
-    state = load_session(user_id)
+    # Verify the conversation belongs to this user
+    with get_auth_conn() as conn:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, user_id),
+        ).fetchone()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+ 
+    # Load session state scoped to THIS conversation
+    state = load_session(conv_id)
  
     # ── Agent 0: resolve follow-up into standalone question ──
     resolution = context_agent.resolve(
@@ -339,54 +350,43 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     except Exception as exc:
         elapsed_ms = int((time.perf_counter() - t_start) * 1000)
         write_audit_log(
-            user_id=user_id,
-            username=username,
-            session_id=req.session_id,
-            nl_question=req.question,
-            resolved_question=resolved_q,
-            execution_ms=elapsed_ms,
-            guardrail_decision="error",
+            user_id=user_id, username=username, session_id=req.session_id,
+            nl_question=req.question, resolved_question=resolved_q,
+            execution_ms=elapsed_ms, guardrail_decision="error",
             error_message=str(exc),
         )
         raise
-
-    elapsed_ms = int((time.perf_counter() - t_start) * 1000)
-    data_obj = result.get("data") or {}
-    row_count = data_obj.get("row_count") if isinstance(data_obj, dict) else None
-    warnings = result.get("warnings", [])
-    generated_sql = result.get("sql", "")
-    executed = result.get("executed", False)
  
-    # Guardrail decision
+    elapsed_ms = int((time.perf_counter() - t_start) * 1000)
+    data_obj   = result.get("data") or {}
+    row_count  = data_obj.get("row_count") if isinstance(data_obj, dict) else None
+    warnings   = result.get("warnings", [])
+    generated_sql = result.get("sql", "")
+    executed   = result.get("executed", False)
+ 
     blocking = [w for w in warnings if not w.startswith("Assumption:")]
     guardrail_decision = "block" if not executed and blocking else "pass"
  
     write_audit_log(
-        user_id=user_id,
-        username=username,
-        session_id=req.session_id,
-        nl_question=req.question,
-        resolved_question=resolved_q,
-        generated_sql=generated_sql,
-        execution_ms=elapsed_ms,
-        row_count=row_count,
-        guardrail_decision=guardrail_decision,
+        user_id=user_id, username=username, session_id=req.session_id,
+        nl_question=req.question, resolved_question=resolved_q,
+        generated_sql=generated_sql, execution_ms=elapsed_ms,
+        row_count=row_count, guardrail_decision=guardrail_decision,
         guardrail_reasons=blocking if guardrail_decision == "block" else [],
-        warnings=warnings,
-        error_message=result.get("error"),
+        warnings=warnings, error_message=result.get("error"),
     )
  
-    # ── Update session state ──
+    # ── Update session state scoped to this conversation ──
     new_extracted = result.get("plan", {}).get("extracted_filters") or []
     new_filter_dict = {
         f["field"]: f["value"]
         for f in new_extracted
         if isinstance(f, dict) and f.get("field")
     }
-    if resolution.is_follow_up:
-        merged_filters = {**state["active_filters"], **new_filter_dict}
-    else:
-        merged_filters = new_filter_dict
+    merged_filters = (
+        {**state["active_filters"], **new_filter_dict}
+        if resolution.is_follow_up else new_filter_dict
+    )
  
     state["chat_history"].append({"role": "user",      "content": req.question})
     state["chat_history"].append({"role": "assistant",  "content": resolved_q})
@@ -395,7 +395,7 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     state["active_filters"] = merged_filters
     state["chat_history"]   = state["chat_history"][-40:]
  
-    save_session(user_id, state)
+    save_session(conv_id, state)
  
     return {
         **result,
@@ -404,20 +404,63 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
         "active_filters": merged_filters,
         "chat_history": state["chat_history"],
     }
-
-@app.delete("/session/reset")
-def delete_session(current_user: dict = Depends(get_current_user)):
-    """Reset the current user's session state."""
-    reset_session(current_user["id"])
-    return {"status": "reset", "user_id": current_user["id"]}
  
-@app.patch("/session/filters")
-def patch_filters(current_user: dict = Depends(get_current_user)):
-    """Clear only active filters, keeping chat history."""
-    state = clear_filters(current_user["id"])
+ 
+# ── Session endpoints (all conversation-scoped) ───────────────────────────────
+ 
+@app.delete("/session/{conv_id}/reset")
+def reset_conv_session(conv_id: int, current_user: dict = Depends(get_current_user)):
+    """
+    Reset NL2SQL session state for a conversation (clears active_filters and
+    Agent 0 chat_history). The conversation record and its messages are kept
+    so the user can still see them in the sidebar. Audit logs are unaffected.
+    """
+    with get_auth_conn() as conn:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, current_user["id"]),
+        ).fetchone()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    reset_session(conv_id)
+    return {"status": "reset", "conversation_id": conv_id}
+ 
+ 
+@app.patch("/session/{conv_id}/filters")
+def clear_conv_filters(conv_id: int, current_user: dict = Depends(get_current_user)):
+    """Clear active filters for a conversation without touching chat history."""
+    with get_auth_conn() as conn:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, current_user["id"]),
+        ).fetchone()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    state = clear_filters(conv_id)
     return {"status": "filters_cleared", "active_filters": state["active_filters"]}
  
-@app.get("/session")
-def get_session(current_user: dict = Depends(get_current_user)):
-    """Return current user's session state."""
-    return load_session(current_user["id"])
+ 
+@app.get("/session/{conv_id}")
+def get_conv_session(conv_id: int, current_user: dict = Depends(get_current_user)):
+    """Return session state for a conversation."""
+    with get_auth_conn() as conn:
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, current_user["id"]),
+        ).fetchone()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return load_session(conv_id)
+ 
+ 
+@app.delete("/conversations/{conv_id}", status_code=204)
+def delete_conv(conv_id: int, current_user: dict = Depends(get_current_user)):
+    """
+    Hard-delete a conversation, all its messages, and its session state.
+    Audit logs for queries in this conversation are preserved (user_id kept,
+    conversation link set to NULL via ON DELETE SET NULL).
+    The conversation will disappear from the sidebar immediately.
+    """
+    deleted = delete_conversation(conv_id, current_user["id"])
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Conversation not found")
