@@ -44,19 +44,21 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, isAdmin, loading, logout } = useAuth();
  
-  const [messages, setMessages]     = useState<Message[]>([WELCOME_MESSAGE]);
-  const [sessionId, setSessionId]   = useState<string>("");
+  // ── All useState declarations first ─────────────────────────────────────
+ 
+  // Per-conversation message store: Map<convId | "new", Message[]>
+  // Using a Map means switching conversations never wipes another conversation's messages.
+  // "new" key is used before a conversation is created in the DB.
+  const [convMessages, setConvMessages] = useState<Map<number | "new", Message[]>>(
+    () => new Map([["new", [WELCOME_MESSAGE]]])
+  );
+ 
+  const [sessionId, setSessionId]       = useState<string>("");
+ 
   // Track loading per conversation so switching chats doesn't show dots
   // in the wrong conversation and doesn't disable the input globally.
   const [loadingConvIds, setLoadingConvIds] = useState<Set<number | "new">>(new Set());
-
-  const setConvLoading = (key: number | "new", loading: boolean) => {
-    setLoadingConvIds((prev) => {
-      const next = new Set(prev);
-      if (loading) next.add(key); else next.delete(key);
-      return next;
-    });
-  };
+ 
   const [debugMode, setDebugMode]   = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("anchor_debug_mode") === "true";
@@ -70,17 +72,49 @@ export default function ChatPage() {
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [deletingId, setDeletingId]         = useState<number | null>(null);
  
-  // Derived: is the currently viewed conversation loading?
-  const activeKey = activeConvId ?? "new";
-  const isLoading = loadingConvIds.has(activeKey);  // derived, not stored
-
+  // ── All useRef declarations ───────────────────────────────────────────────
+ 
   // Ref so handleSend always sees current conv ID without stale closure
   const activeConvIdRef = useRef<number | null>(null);
-  
+ 
   // Abort controller for the current in-flight query — allows user to stop it
   const abortControllerRef = useRef<AbortController | null>(null);
-  const stoppedByUserRef = useRef<boolean>(false);
-
+  const stoppedByUserRef   = useRef<boolean>(false);
+ 
+  // ── Derived values (must be after all useState/useRef above) ─────────────
+ 
+  // Derived: messages for the currently viewed conversation
+  // Must be after activeConvId is declared
+  const messages = convMessages.get(activeConvId ?? "new") ?? [WELCOME_MESSAGE];
+ 
+  // Derived: is the currently viewed conversation loading?
+  // Must be after activeConvId and loadingConvIds are declared
+  const activeKey = activeConvId ?? "new";
+  const isLoading = loadingConvIds.has(activeKey);
+ 
+  // ── Helpers (must be after all state above) ───────────────────────────────
+ 
+  // Update messages for one conversation without touching others
+  const setMessagesForConv = (
+    convKey: number | "new",
+    updater: Message[] | ((prev: Message[]) => Message[])
+  ) => {
+    setConvMessages((prev) => {
+      const next = new Map(prev);
+      const current = next.get(convKey) ?? [WELCOME_MESSAGE];
+      next.set(convKey, typeof updater === "function" ? updater(current) : updater);
+      return next;
+    });
+  };
+ 
+  const setConvLoading = (key: number | "new", loading: boolean) => {
+    setLoadingConvIds((prev) => {
+      const next = new Set(prev);
+      if (loading) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
+ 
   // ── Session ID (audit tracing only) ──────────────────────────────────────
   useEffect(() => {
     let id = sessionStorage.getItem(SESSION_KEY);
@@ -139,7 +173,7 @@ export default function ChatPage() {
                 timestamp: m.timestamp,
               };
             });
-            setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
+            setMessagesForConv(latest.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
             setActiveConvId(latest.id);
             activeConvIdRef.current = latest.id;
           } catch (err) {
@@ -161,10 +195,29 @@ export default function ChatPage() {
   //    can still see the title, but messages and NL2SQL session are gone.
   const handleReset = async () => {
     const convId = activeConvIdRef.current;
+ 
     if (convId !== null) {
-      await resetSession(convId);
+      try {
+        // Hard-delete the conversation from DB (messages + session state).
+        // Audit logs are preserved via ON DELETE SET NULL.
+        await deleteConversation(convId);
+        // Remove from sidebar and message cache
+        setConversations((prev) => prev.filter((c) => c.id !== convId));
+        setConvMessages((prev) => {
+          const next = new Map(prev);
+          next.delete(convId);
+          if (!next.has("new")) next.set("new", [WELCOME_MESSAGE]);
+          return next;
+        });
+      } catch (err) {
+        console.error("Failed to delete conversation on reset", err);
+      }
     }
-    setMessages([WELCOME_MESSAGE]);
+ 
+    // Switch to a fresh "new" chat
+    setActiveConvId(null);
+    activeConvIdRef.current = null;
+    setMessagesForConv("new", [WELCOME_MESSAGE]);
   };
  
   const handleClearFilters = async () => {
@@ -173,26 +226,40 @@ export default function ChatPage() {
       await clearSessionFilters(convId);
     }
   };
-
+ 
   // ── Stop: abort the current in-flight query ─────────────────────────────
   const handleStop = () => {
   stoppedByUserRef.current = true;
   abortControllerRef.current?.abort();
   abortControllerRef.current = null;
   };
-
+ 
  
   // ── New chat: sets up a blank view; DB conversation created on first send ─
   const handleNewChat = () => {
     setActiveConvId(null);
     activeConvIdRef.current = null;
-    setMessages([WELCOME_MESSAGE]);
+    // Ensure the "new" slot has a welcome message, but don't wipe other convs
+    setMessagesForConv("new", [WELCOME_MESSAGE]);
   };
  
   // ── Select a past conversation from the sidebar ───────────────────────────
   const handleSelectConversation = async (conv: Conversation) => {
     // Already viewing this conversation — do nothing
     if (conv.id === activeConvIdRef.current) return;
+ 
+    // Switch active conversation immediately so the UI responds
+    setActiveConvId(conv.id);
+    activeConvIdRef.current = conv.id;
+ 
+    // If we already have this conversation's messages in the in-memory cache
+    // (e.g. the user sent a message here this session), use them directly.
+    // This prevents a DB fetch from returning stale/incomplete data when
+    // appendMessage fire-and-forget calls haven't finished yet.
+    const cached = convMessages.get(conv.id);
+    if (cached && cached.length > 0) return;
+ 
+    // Not in cache — fetch from DB (e.g. restoring a past conversation)
     try {
       const storedMsgs = await getConversationMessages(conv.id);
       const loaded: Message[] = storedMsgs.map((m) => {
@@ -220,15 +287,12 @@ export default function ChatPage() {
           timestamp: m.timestamp,
         };
       });
- 
-      setMessages(loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
-      setActiveConvId(conv.id);
-      activeConvIdRef.current = conv.id;
+      setMessagesForConv(conv.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
     } catch (err) {
       console.error("Failed to load conversation messages", err);
     }
   };
-
+ 
   // ── Delete a conversation from the sidebar ────────────────────────────────
   const handleDeleteConversation = async (
     e: React.MouseEvent,
@@ -246,15 +310,21 @@ export default function ChatPage() {
       if (activeConvIdRef.current === conv.id) {
         setActiveConvId(null);
         activeConvIdRef.current = null;
-        setMessages([WELCOME_MESSAGE]);
       }
+      // Remove from message cache
+      setConvMessages((prev) => {
+        const next = new Map(prev);
+        next.delete(conv.id);
+        if (!next.has("new")) next.set("new", [WELCOME_MESSAGE]);
+        return next;
+      });
     } catch (err) {
       console.error("Failed to delete conversation", err);
     } finally {
       setDeletingId(null);
     }
   };
-
+ 
   // ── Send a message ────────────────────────────────────────────────────────
   const handleSend = async (content: string) => {
     const userMessage: Message = {
@@ -265,7 +335,8 @@ export default function ChatPage() {
       kind: "query",
     };
  
-    setMessages((prev) => [...prev, userMessage]);
+    // Use "new" key until we have a real convId from the DB
+    setMessagesForConv(activeConvIdRef.current ?? "new", (prev) => [...prev, userMessage]);
  
     // Create a conversation in the DB on the first message of a new chat.
     // Do this BEFORE marking loading so the key is correct.
@@ -276,6 +347,14 @@ export default function ChatPage() {
         convId = created.id;
         activeConvIdRef.current = convId;
         setActiveConvId(convId);
+        // Migrate messages from the "new" slot to the real conversation ID
+        setConvMessages((prev) => {
+          const next = new Map(prev);
+          const newMsgs = next.get("new") ?? [WELCOME_MESSAGE];
+          next.set(convId!, newMsgs);
+          next.set("new", [WELCOME_MESSAGE]); // reset the "new" slot
+          return next;
+        });
         getConversations().then(setConversations).catch(console.error);
       } catch (err) {
         console.error("Failed to create conversation", err);
@@ -304,7 +383,7 @@ export default function ChatPage() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     stoppedByUserRef.current = false;
-
+ 
     try {
       const result = await queryBackend(
         content,
@@ -312,7 +391,7 @@ export default function ChatPage() {
         convId,
         chatMode,
         conversationHistory,
-        abortController.signal,  // ← wire stop button to fetch
+        abortController.signal,
       );
  
       const needsClarification = Boolean(result.query_plan?.needs_clarification);
@@ -329,11 +408,10 @@ export default function ChatPage() {
         kind: needsClarification ? "clarification" : "result",
       };
  
-      // Only update the displayed messages if the user is still viewing
-      // the same conversation that originated this query.
-      if (activeConvIdRef.current === queryConvId) {
-        setMessages((prev) => [...prev, assistantMessage]);
-      }
+      // Always update the correct conversation's messages regardless of
+      // which conversation is currently viewed. setMessagesForConv uses
+      // the queryConvId key, so it never touches other conversations.
+      setMessagesForConv(queryConvId, (prev) => [...prev, assistantMessage]);
  
       // Always persist to DB regardless of which view is active
       appendMessage(queryConvId, "assistant", JSON.stringify(result)).catch(console.error);
@@ -341,20 +419,11 @@ export default function ChatPage() {
       // Refresh sidebar title
       getConversations().then(setConversations).catch(console.error);
     } catch (error) {
-      // Snapshot stoppedByUser NOW — finally will clear the ref before we can read it
       const wasStopped = stoppedByUserRef.current;
- 
-      let errorText = "Failed to connect to server. Make sure the backend is running.";
-      if (error instanceof Error && error.name === "AbortError") {
-        errorText = wasStopped
-          ? "Query stopped by user."
-          : "Request timed out — the query was too complex or the model took too long.";
-      }
- 
       const errorMessage: Message = {
         id: `${Date.now() + 1}`,
         role: "assistant",
-        content: wasStopped ? "Query stopped." : "Sorry, something went wrong.",
+        content: "Sorry, something went wrong.",
         result: {
           data: [],
           sql: "",
@@ -368,15 +437,18 @@ export default function ChatPage() {
             clarification_question: null,
           },
           guardrails: { ok: false, warnings: [] },
-          error: errorText,
+          error:
+            error instanceof Error && error.name === "AbortError"
+              ? wasStopped
+                ? "Query stopped by user."
+                : "Request timed out — the query was too complex or the model took too long."
+              : "Failed to connect to server. Make sure the backend is running.",
         },
         timestamp: new Date().toISOString(),
         kind: "error",
       };
-      // Only show error in the conversation it belongs to
-      if (activeConvIdRef.current === queryConvId) {
-        setMessages((prev) => [...prev, errorMessage]);
-      }
+      // Always update the correct conversation's messages
+      setMessagesForConv(queryConvId, (prev) => [...prev, errorMessage]);
     } finally {
       abortControllerRef.current = null;
       stoppedByUserRef.current = false;
@@ -385,7 +457,6 @@ export default function ChatPage() {
   };
  
   if (loading || !user) return null;
-
  
   return (
     <div className="flex h-screen overflow-hidden bg-white">
