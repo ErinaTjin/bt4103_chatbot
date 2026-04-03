@@ -17,10 +17,14 @@ export async function queryBackend(
   conversationId: number,
   mode: "fast" | "strict" = "fast",
   conversationHistory: Array<{ role: string; content: string; kind?: string }> = [],
+  externalSignal?: AbortSignal,
 ): Promise<QueryResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 400000);
  
+  // Wire up optional external signal (user stop button) to the same controller
+  externalSignal?.addEventListener("abort", () => controller.abort());
+
   const response = await fetch(`${BACKEND_URL}/nl2sql/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },

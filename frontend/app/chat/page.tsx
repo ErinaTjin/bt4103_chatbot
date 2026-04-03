@@ -73,10 +73,14 @@ export default function ChatPage() {
   // Derived: is the currently viewed conversation loading?
   const activeKey = activeConvId ?? "new";
   const isLoading = loadingConvIds.has(activeKey);  // derived, not stored
-  
+
   // Ref so handleSend always sees current conv ID without stale closure
   const activeConvIdRef = useRef<number | null>(null);
- 
+  
+  // Abort controller for the current in-flight query — allows user to stop it
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const stoppedByUserRef = useRef<boolean>(false);
+
   // ── Session ID (audit tracing only) ──────────────────────────────────────
   useEffect(() => {
     let id = sessionStorage.getItem(SESSION_KEY);
@@ -169,6 +173,14 @@ export default function ChatPage() {
       await clearSessionFilters(convId);
     }
   };
+
+  // ── Stop: abort the current in-flight query ─────────────────────────────
+  const handleStop = () => {
+  stoppedByUserRef.current = true;
+  abortControllerRef.current?.abort();
+  abortControllerRef.current = null;
+  };
+
  
   // ── New chat: sets up a blank view; DB conversation created on first send ─
   const handleNewChat = () => {
@@ -287,7 +299,12 @@ export default function ChatPage() {
     const conversationHistory = messages
       .filter((m) => m.id !== "welcome")
       .map((m) => ({ role: m.role, content: m.content, kind: m.kind }));
- 
+    
+    // Create a fresh AbortController for this query
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    stoppedByUserRef.current = false;
+
     try {
       const result = await queryBackend(
         content,
@@ -295,6 +312,7 @@ export default function ChatPage() {
         convId,
         chatMode,
         conversationHistory,
+        abortController.signal,  // ← wire stop button to fetch
       );
  
       const needsClarification = Boolean(result.query_plan?.needs_clarification);
@@ -323,10 +341,20 @@ export default function ChatPage() {
       // Refresh sidebar title
       getConversations().then(setConversations).catch(console.error);
     } catch (error) {
+      // Snapshot stoppedByUser NOW — finally will clear the ref before we can read it
+      const wasStopped = stoppedByUserRef.current;
+ 
+      let errorText = "Failed to connect to server. Make sure the backend is running.";
+      if (error instanceof Error && error.name === "AbortError") {
+        errorText = wasStopped
+          ? "Query stopped by user."
+          : "Request timed out — the query was too complex or the model took too long.";
+      }
+ 
       const errorMessage: Message = {
         id: `${Date.now() + 1}`,
         role: "assistant",
-        content: "Sorry, something went wrong.",
+        content: wasStopped ? "Query stopped." : "Sorry, something went wrong.",
         result: {
           data: [],
           sql: "",
@@ -340,10 +368,7 @@ export default function ChatPage() {
             clarification_question: null,
           },
           guardrails: { ok: false, warnings: [] },
-          error:
-            error instanceof Error && error.name === "AbortError"
-              ? "Request timed out — the query was too complex or the model took too long."
-              : "Failed to connect to server. Make sure the backend is running.",
+          error: errorText,
         },
         timestamp: new Date().toISOString(),
         kind: "error",
@@ -353,11 +378,14 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, errorMessage]);
       }
     } finally {
+      abortControllerRef.current = null;
+      stoppedByUserRef.current = false;
       setConvLoading(queryConvId, false);
     }
   };
  
   if (loading || !user) return null;
+
  
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -591,7 +619,7 @@ export default function ChatPage() {
           )}
         </div>
  
-        <ChatInput onSend={handleSend} disabled={isLoading} />
+        <ChatInput onSend={handleSend} onStop={handleStop} isLoading={isLoading} disabled={false} />
       </div>
     </div>
   );
