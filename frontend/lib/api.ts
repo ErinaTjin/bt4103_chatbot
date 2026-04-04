@@ -2,14 +2,14 @@ import { QueryResponse, Conversation, ConversationMessage, AuditLog } from './ty
 import { getAuthHeader } from './auth';
  
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-
+ 
 function handleUnauthorized(status: number): void { //handle 401 errors globally to auto-logout users with expired tokens
   if (status === 401) {
     sessionStorage.removeItem("auth_user");
     window.location.replace("/login");
   }
 }
-
+ 
 // ── NL2SQL chat ───────────────────────────────────────────────────────────────
 export async function queryBackend(
   message: string,
@@ -24,7 +24,7 @@ export async function queryBackend(
  
   // Wire up optional external signal (user stop button) to the same controller
   externalSignal?.addEventListener("abort", () => controller.abort());
-
+ 
   const response = await fetch(`${BACKEND_URL}/nl2sql/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -61,9 +61,11 @@ export async function queryBackend(
     guardrails: { ok: raw.warnings?.length === 0, warnings: raw.warnings ?? [] },
     warnings: raw.warnings ?? [],
     resolved_question: raw.resolved_question ?? undefined,
-    error:
-      raw.error ||
-      (raw.executed === false && !raw.warnings?.length ? 'Failed to execute query' : undefined),
+    // Only set error if the backend explicitly returned one.
+    // Do NOT synthesise an error from executed===false — that field being false
+    // is normal for clarification responses and does not mean the query failed.
+    // A synthetic error string stored in the DB causes output to disappear on restore.
+    error: raw.error || undefined,
   };
 }
  
@@ -125,7 +127,7 @@ export async function appendMessage(
   if (!res.ok) throw new Error(`Failed to append message: ${res.status}`);
   return res.json();
 }
-
+ 
 export async function deleteConversation(convId: number): Promise<void> {
   const res = await fetch(`${BACKEND_URL}/conversations/${convId}`, {
     method: 'DELETE',
@@ -136,9 +138,9 @@ export async function deleteConversation(convId: number): Promise<void> {
     throw new Error(`Failed to delete conversation: ${res.status}`);
   }
 }
-
+ 
 // ── Admin ─────────────────────────────────────────────────────────────────────
-
+ 
 export async function getAdminLogs(limit = 200, offset = 0): Promise<AuditLog[]> {
   const res = await fetch(
     `${BACKEND_URL}/admin/logs?limit=${limit}&offset=${offset}`,

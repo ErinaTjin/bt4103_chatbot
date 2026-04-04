@@ -135,51 +135,68 @@ export default function ChatPage() {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
  
-  // ── Load sidebar + auto-restore most recent conversation on login ─────────
+  // ── Load sidebar + restore all conversations on login ───────────────────
   useEffect(() => {
     if (!user) return;
     setSidebarLoading(true);
     getConversations()
       .then(async (convs) => {
         setConversations(convs);
-        // Auto-restore the most recent conversation so the user lands back
-        // where they left off. The NL2SQL session state (active_filters,
-        // Agent 0 chat_history) is already persisted in the DB — it will
-        // be loaded by the backend on the next query automatically.
-        if (convs.length > 0 && activeConvIdRef.current === null) {
-          const latest = convs[0]; // ORDER BY created_at DESC from backend
-          try {
-            const storedMsgs = await getConversationMessages(latest.id);
-            const loaded: Message[] = storedMsgs.map((m) => {
-              if (m.role === "assistant") {
-                try {
-                  const result = JSON.parse(m.content);
-                  if (result && typeof result === "object" && "sql" in result) {
-                    return {
-                      id: m.id.toString(),
-                      content: "Here are your results:",
-                      role: m.role as "user" | "assistant",
-                      result,
-                      timestamp: m.timestamp,
-                      kind: "result" as const,
-                    };
-                  }
-                } catch { /* plain text */ }
-              }
-              return {
-                id: m.id.toString(),
-                content: m.content,
-                role: m.role as "user" | "assistant",
-                timestamp: m.timestamp,
-              };
-            });
-            setMessagesForConv(latest.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
-            setActiveConvId(latest.id);
-            activeConvIdRef.current = latest.id;
-          } catch (err) {
-            console.error("Failed to auto-restore conversation", err);
-          }
-        }
+        if (convs.length === 0) return;
+ 
+        // Load messages for ALL conversations so the sidebar cache is fully
+        // populated. This means switching between conversations after login
+        // never shows an empty view — messages are already in memory.
+        const loadedMap = new Map<number | "new", Message[]>([
+          ["new", [WELCOME_MESSAGE]],
+        ]);
+ 
+        await Promise.all(
+          convs.map(async (conv) => {
+            try {
+              const storedMsgs = await getConversationMessages(conv.id);
+              const loaded: Message[] = storedMsgs.map((m) => {
+                if (m.role === "assistant") {
+                  try {
+                    const result = JSON.parse(m.content);
+                    if (result && typeof result === "object" && "sql" in result) {
+                      // Skip persisted error/stopped messages — they are transient
+                      // and should not be restored. Only restore messages with data.
+                      if (result.error && (!result.data || result.data.length === 0)) {
+                        return null;
+                      }
+                      return {
+                        id: m.id.toString(),
+                        content: "Here are your results:",
+                        role: m.role as "user" | "assistant",
+                        result,
+                        timestamp: m.timestamp,
+                        kind: "result" as const,
+                      };
+                    }
+                  } catch { /* plain text */ }
+                }
+                return {
+                  id: m.id.toString(),
+                  content: m.content,
+                  role: m.role as "user" | "assistant",
+                  timestamp: m.timestamp,
+                };
+              }).filter((m): m is Message => m !== null);
+              loadedMap.set(conv.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
+            } catch (err) {
+              console.error(`Failed to load messages for conv ${conv.id}`, err);
+            }
+          })
+        );
+ 
+        // Write all conversations into the cache in one setState call
+        setConvMessages(loadedMap);
+ 
+        // Auto-activate the most recent conversation
+        const latest = convs[0]; // ORDER BY created_at DESC from backend
+        setActiveConvId(latest.id);
+        activeConvIdRef.current = latest.id;
       })
       .catch(console.error)
       .finally(() => setSidebarLoading(false));
@@ -267,6 +284,10 @@ export default function ChatPage() {
           try {
             const result = JSON.parse(m.content);
             if (result && typeof result === "object" && "sql" in result) {
+              // Skip persisted error/stopped messages — transient, don't restore
+              if (result.error && (!result.data || result.data.length === 0)) {
+                return null;
+              }
               return {
                 id: m.id.toString(),
                 content: "Here are your results:",
@@ -286,7 +307,7 @@ export default function ChatPage() {
           role: m.role as "user" | "assistant",
           timestamp: m.timestamp,
         };
-      });
+      }).filter((m): m is Message => m !== null);
       setMessagesForConv(conv.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
     } catch (err) {
       console.error("Failed to load conversation messages", err);
@@ -413,8 +434,12 @@ export default function ChatPage() {
       // the queryConvId key, so it never touches other conversations.
       setMessagesForConv(queryConvId, (prev) => [...prev, assistantMessage]);
  
-      // Always persist to DB regardless of which view is active
-      appendMessage(queryConvId, "assistant", JSON.stringify(result)).catch(console.error);
+      // Only persist to DB when there is actual data to show.
+      // Error messages (stopped, timeout, guardrail block) are transient —
+      // storing them causes ghost entries that hide missing output on reload.
+      if (result.data && result.data.length > 0) {
+        appendMessage(queryConvId, "assistant", JSON.stringify(result)).catch(console.error);
+      }
  
       // Refresh sidebar title
       getConversations().then(setConversations).catch(console.error);

@@ -46,10 +46,9 @@ export async function register(
 }
  
 export async function logout(): Promise<void> {
-  await fetch(`${BACKEND_URL}/session/reset`, {
-    method: "DELETE",
-    headers: getAuthHeader(),
-  }).catch(() => {});
+  // Only clear the auth token — do NOT touch session state or conversations.
+  // The user's chat history and NL2SQL session state in the DB must survive
+  // logout so they are restored on next login.
   sessionStorage.removeItem(STORAGE_KEY);
 }
  

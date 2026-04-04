@@ -158,7 +158,7 @@ export function MessageBubble({
             </details>
           )}
 
-        {message.result && !message.result.error && (
+        {message.result && (message.result.data?.length ?? 0) > 0 && (
           <div className="mt-6 space-y-4">
             {summary && <SummaryCard summary={summary} />}
 
