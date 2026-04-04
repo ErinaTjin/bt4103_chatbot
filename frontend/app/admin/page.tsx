@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -7,16 +7,16 @@ import { getAdminLogs } from "@/lib/api";
 import { AuditLog } from "@/lib/types";
 import { VegaEmbed } from "react-vega";
 import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut } from "lucide-react";
-
+ 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
+ 
 function parseJsonField(raw: string | null): string[] {
   if (!raw) return [];
   try { return JSON.parse(raw); } catch { return []; }
 }
-
+ 
 // ── chart specs ───────────────────────────────────────────────────────────────
-
+ 
 function latencySpec(rows: { time: string; ms: number }[]): Record<string, unknown> {
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
@@ -26,15 +26,15 @@ function latencySpec(rows: { time: string; ms: number }[]): Record<string, unkno
     mark: { type: "line", point: true, color: "#6366f1" },
     encoding: {
       x: { field: "time", type: "temporal", title: "Time", axis: { labelAngle: -30 } },
-      y: { field: "ms", type: "quantitative", title: "Latency (ms)" },
+      y: { field: "ms", type: "quantitative", title: "Latency (s)" },
       tooltip: [
         { field: "time", type: "temporal", title: "Time" },
-        { field: "ms", type: "quantitative", title: "Latency (ms)" },
+        { field: "ms", type: "quantitative", title: "Latency (s)" },
       ],
     },
   };
 }
-
+ 
 function blockedSpec(rows: { reason: string; count: number }[]): Record<string, unknown> {
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
@@ -52,25 +52,25 @@ function blockedSpec(rows: { reason: string; count: number }[]): Record<string, 
     },
   };
 }
-
+ 
 // ── main component ────────────────────────────────────────────────────────────
-
+ 
 export default function AdminDashboard() {
   const { user, isAdmin, loading, logout } = useAuth();
   const router = useRouter();
-
+ 
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-
+ 
   // Redirect unauthenticated users to login after auth resolves
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/login");
     }
   }, [loading, user, router]);
-
+ 
   const fetchLogs = useCallback(async () => {
     setFetching(true);
     setError(null);
@@ -84,11 +84,11 @@ export default function AdminDashboard() {
       setFetching(false);
     }
   }, []);
-
+ 
   useEffect(() => {
     if (isAdmin) fetchLogs();
   }, [isAdmin, fetchLogs]);
-
+ 
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950 text-gray-400">
@@ -96,7 +96,7 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
+ 
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
@@ -116,14 +116,14 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
+ 
   // ── derived data ────────────────────────────────────────────────────────────
-
+ 
   const latencyRows = logs
     .filter((l) => l.execution_ms !== null)
-    .map((l) => ({ time: l.timestamp, ms: l.execution_ms as number }))
+    .map((l) => ({ time: l.timestamp, ms: Math.round((l.execution_ms as number) / 1000 * 100) / 100 }))
     .reverse(); // oldest first for line chart
-
+ 
   const reasonCounts: Record<string, number> = {};
   logs
     .filter((l) => l.guardrail_decision === "block")
@@ -136,18 +136,18 @@ export default function AdminDashboard() {
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
-
+ 
   const errorLogs = logs.filter((l) => l.error_message || l.guardrail_decision === "error");
-
+ 
   const totalQueries = logs.length;
   const blockedCount = logs.filter((l) => l.guardrail_decision === "block").length;
   const avgLatency =
     latencyRows.length > 0
-      ? Math.round(latencyRows.reduce((s, r) => s + r.ms, 0) / latencyRows.length)
+      ? Math.round(latencyRows.reduce((s, r) => s + r.ms, 0) / latencyRows.length * 100) / 100
       : null;
-
+ 
   // ── render ──────────────────────────────────────────────────────────────────
-
+ 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       {/* Top bar */}
@@ -185,7 +185,7 @@ export default function AdminDashboard() {
           </button>
         </div>
       </header>
-
+ 
       <main className="p-6 space-y-6 max-w-screen-xl mx-auto">
         {error && (
           <div className="flex items-center gap-2 p-4 rounded-lg bg-red-950 border border-red-700 text-red-300 text-sm">
@@ -193,7 +193,7 @@ export default function AdminDashboard() {
             {error}
           </div>
         )}
-
+ 
         {/* KPI cards */}
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Total Queries" value={totalQueries} icon={<Activity size={18} />} />
@@ -205,12 +205,12 @@ export default function AdminDashboard() {
           />
           <StatCard
             label="Avg Latency"
-            value={avgLatency !== null ? `${avgLatency} ms` : "—"}
+            value={avgLatency !== null ? `${avgLatency.toFixed(2)} s` : "—"}
             icon={<RefreshCw size={18} />}
             accent="indigo"
           />
         </div>
-
+ 
         {/* Charts row */}
         <div className="grid grid-cols-2 gap-4">
           {/* Latency over time */}
@@ -225,7 +225,7 @@ export default function AdminDashboard() {
               <VegaEmbed spec={latencySpec(latencyRows)} options={{ actions: false }} style={{ width: "100%" }} />
             )}
           </div>
-
+ 
           {/* Blocked queries by reason */}
           <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
             <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
@@ -239,7 +239,7 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-
+ 
         {/* Recent errors */}
         <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
@@ -330,7 +330,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="py-1.5 pr-3 text-right">
-                        {l.execution_ms !== null ? `${l.execution_ms} ms` : "—"}
+                        {l.execution_ms !== null ? `${(l.execution_ms / 1000).toFixed(2)} s` : "—"}
                       </td>
                       <td className="py-1.5 text-right">
                         {l.row_count !== null ? l.row_count : "—"}
@@ -346,9 +346,9 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
+ 
 // ── sub-components ─────────────────────────────────────────────────────────────
-
+ 
 function StatCard({
   label,
   value,
@@ -376,7 +376,7 @@ function StatCard({
     </div>
   );
 }
-
+ 
 function EmptyState({ text }: { text: string }) {
   return (
     <div className="flex items-center justify-center h-24 text-gray-600 text-sm">{text}</div>
