@@ -5,17 +5,16 @@ SYSTEM_PROMPT = (
     "Output ONLY valid JSON."
 )
 
-
 USER_PROMPT_TEMPLATE = """
 Current user question:
 {question}
-
+ 
 Conversation history (latest last):
 {history}
-
+ 
 Active filters (already applied in UI):
 {active_filters}
-
+ 
 Return JSON in this shape:
 {{
   "intent": "count|distribution|trend|topN|mutation_prevalence|cohort_comparison|unsupported",
@@ -25,7 +24,7 @@ Return JSON in this shape:
   "extracted_filters": [{{"field": "...", "op": "=|!=|>|<|>=|<=|in|like|or_like|between", "value": "..."}}],
   "active_filters": {{"field": "value"}}
 }}
-
+ 
 Rules:
 - Output JSON only.
 - Keep this lightweight: summarize intent and extract likely filters.
@@ -43,4 +42,18 @@ Rules:
   For year or date ranges always use TWO separate filters:
   {{"field": "year", "op": ">=", "value": "2010"}},
   {{"field": "year", "op": "<=", "value": "2020"}}
+ 
+DATA AVAILABILITY — set intent='unsupported' for any of the following:
+- The question asks about a cancer type NOT in this dataset. The ONLY cancer types currently available are colorectal cancers.
+  Examples that must be unsupported:
+    "how many lung cancer patients" → unsupported (C34 not in dataset)
+    "show breast cancer cases by year" → unsupported (C50 not in dataset)
+- The question asks for data that cannot be computed from the available tables
+  (e.g. 5-year survival rates, insurance claims, treatment costs, genomic sequences).
+- The question requires writing, updating, or deleting data.
+When intent='unsupported', set:
+  intent_summary = brief explanation of why this cannot be answered
+  needs_clarification = false
+  clarification_question = null
+  extracted_filters = []
 """
