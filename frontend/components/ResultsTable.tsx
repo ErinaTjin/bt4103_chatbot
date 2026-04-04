@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useMemo, useState } from "react";
 import {
   useReactTable,
@@ -12,20 +12,20 @@ import {
   ColumnDef,
 } from "@tanstack/react-table";
 import { DataRow } from "@/lib/types";
-import { Search } from "lucide-react";
-
+import { Search, Download } from "lucide-react";
+ 
 interface ResultsTableProps {
   data: DataRow[];
 }
-
+ 
 export function ResultsTable({ data }: ResultsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
-
+ 
   const columns = useMemo<ColumnDef<DataRow>[]>(() => {
     if (!data || data.length === 0) return [];
-
+ 
     return Object.keys(data[0]).map((key) => ({
       accessorKey: key,
       header: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " "),
@@ -45,7 +45,7 @@ export function ResultsTable({ data }: ResultsTableProps) {
       },
     }));
   }, [data]);
-
+ 
   const table = useReactTable({
     data,
     columns,
@@ -57,15 +57,37 @@ export function ResultsTable({ data }: ResultsTableProps) {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
-
+ 
   if (!data || data.length === 0) return null;
-
+ 
+  const downloadCSV = () => {
+    const headers = Object.keys(data[0]);
+    const escape = (val: unknown): string => {
+      if (val === null || val === undefined) return "";
+      const str = String(val).replace(/"/g, '""');
+      return str.includes(",") || str.includes('"') || str.includes("\n")
+        ? `"${str}"`
+        : str;
+    };
+    const rows = table.getRowModel().rows.map((row) =>
+      headers.map((h) => escape(row.getValue(h))).join(",")
+    );
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `results_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+ 
   const filteredCount = table.getRowModel().rows.length;
   const totalCount = data.length;
-
+ 
   return (
     <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-white">
-      {/* Global search bar */}
+      {/* Search bar + CSV export */}
       <div className="px-4 py-2 border-b border-gray-100 flex items-center space-x-2">
         <Search className="w-3 h-3 text-gray-400 shrink-0" />
         <input
@@ -79,8 +101,16 @@ export function ResultsTable({ data }: ResultsTableProps) {
             {filteredCount}/{totalCount} rows
           </span>
         )}
+        <button
+          onClick={downloadCSV}
+          title="Download table as CSV"
+          className="flex items-center gap-1 ml-2 px-2 py-1 rounded-md text-[10px] font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 transition-colors shrink-0"
+        >
+          <Download className="w-3 h-3" />
+          CSV
+        </button>
       </div>
-
+ 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm border-collapse">
           <thead>

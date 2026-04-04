@@ -27,6 +27,7 @@ import {
   Filter,
   ShieldAlert,
   Trash2,
+  X,
 } from "lucide-react";
  
 // Per-tab unique ID used only for audit log tracing — not for session state
@@ -59,6 +60,11 @@ export default function ChatPage() {
   // in the wrong conversation and doesn't disable the input globally.
   const [loadingConvIds, setLoadingConvIds] = useState<Set<number | "new">>(new Set());
  
+  // Active filters from the most recent query response — per conversation
+  const [convActiveFilters, setConvActiveFilters] = useState<Map<number | "new", Record<string, unknown>>>(
+    new Map()
+  );
+ 
   const [debugMode, setDebugMode]   = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("anchor_debug_mode") === "true";
@@ -86,6 +92,9 @@ export default function ChatPage() {
   // Derived: messages for the currently viewed conversation
   // Must be after activeConvId is declared
   const messages = convMessages.get(activeConvId ?? "new") ?? [WELCOME_MESSAGE];
+ 
+  // Derived: active filters for the currently viewed conversation
+  const activeFilters = convActiveFilters.get(activeConvId ?? "new") ?? {};
  
   // Derived: is the currently viewed conversation loading?
   // Must be after activeConvId and loadingConvIds are declared
@@ -160,11 +169,6 @@ export default function ChatPage() {
                   try {
                     const result = JSON.parse(m.content);
                     if (result && typeof result === "object" && "sql" in result) {
-                      // Skip persisted error/stopped messages — they are transient
-                      // and should not be restored. Only restore messages with data.
-                      if (result.error && (!result.data || result.data.length === 0)) {
-                        return null;
-                      }
                       return {
                         id: m.id.toString(),
                         content: "Here are your results:",
@@ -182,7 +186,7 @@ export default function ChatPage() {
                   role: m.role as "user" | "assistant",
                   timestamp: m.timestamp,
                 };
-              }).filter((m): m is Message => m !== null);
+              });
               loadedMap.set(conv.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
             } catch (err) {
               console.error(`Failed to load messages for conv ${conv.id}`, err);
@@ -226,6 +230,11 @@ export default function ChatPage() {
           if (!next.has("new")) next.set("new", [WELCOME_MESSAGE]);
           return next;
         });
+        setConvActiveFilters((prev) => {
+          const next = new Map(prev);
+          next.delete(convId);
+          return next;
+        });
       } catch (err) {
         console.error("Failed to delete conversation on reset", err);
       }
@@ -242,6 +251,13 @@ export default function ChatPage() {
     if (convId !== null) {
       await clearSessionFilters(convId);
     }
+    // Clear local filter display for this conversation
+    const key = activeConvIdRef.current ?? "new";
+    setConvActiveFilters((prev) => {
+      const next = new Map(prev);
+      next.set(key, {});
+      return next;
+    });
   };
  
   // ── Stop: abort the current in-flight query ─────────────────────────────
@@ -284,10 +300,6 @@ export default function ChatPage() {
           try {
             const result = JSON.parse(m.content);
             if (result && typeof result === "object" && "sql" in result) {
-              // Skip persisted error/stopped messages — transient, don't restore
-              if (result.error && (!result.data || result.data.length === 0)) {
-                return null;
-              }
               return {
                 id: m.id.toString(),
                 content: "Here are your results:",
@@ -307,7 +319,7 @@ export default function ChatPage() {
           role: m.role as "user" | "assistant",
           timestamp: m.timestamp,
         };
-      }).filter((m): m is Message => m !== null);
+      });
       setMessagesForConv(conv.id, loaded.length > 0 ? loaded : [WELCOME_MESSAGE]);
     } catch (err) {
       console.error("Failed to load conversation messages", err);
@@ -434,12 +446,17 @@ export default function ChatPage() {
       // the queryConvId key, so it never touches other conversations.
       setMessagesForConv(queryConvId, (prev) => [...prev, assistantMessage]);
  
-      // Only persist to DB when there is actual data to show.
-      // Error messages (stopped, timeout, guardrail block) are transient —
-      // storing them causes ghost entries that hide missing output on reload.
-      if (result.data && result.data.length > 0) {
-        appendMessage(queryConvId, "assistant", JSON.stringify(result)).catch(console.error);
+      // Update active filters for this conversation
+      if (result.active_filters !== undefined) {
+        setConvActiveFilters((prev) => {
+          const next = new Map(prev);
+          next.set(queryConvId, result.active_filters ?? {});
+          return next;
+        });
       }
+ 
+      // Always persist to DB regardless of which view is active
+      appendMessage(queryConvId, "assistant", JSON.stringify(result)).catch(console.error);
  
       // Refresh sidebar title
       getConversations().then(setConversations).catch(console.error);
@@ -601,18 +618,20 @@ export default function ChatPage() {
               {chatMode === "fast" ? "Fast Mode" : "Strict Mode"}
             </button>
  
-            {/* Debug toggle — all users */}
-            <button
-              onClick={() => setDebugMode((prev) => !prev)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                debugMode
-                  ? "bg-amber-100 text-amber-700 border border-amber-200"
-                  : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
-              }`}
-            >
-              <Bug className="w-3.5 h-3.5" />
-              {debugMode ? "Debug ON" : "Debug OFF"}
-            </button>
+            {/* Debug toggle — admin only */}
+            {isAdmin && (
+              <button
+                onClick={() => setDebugMode((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  debugMode
+                    ? "bg-amber-100 text-amber-700 border border-amber-200"
+                    : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                }`}
+              >
+                <Bug className="w-3.5 h-3.5" />
+                {debugMode ? "Debug ON" : "Debug OFF"}
+              </button>
+            )}
  
             {/* Clear filters */}
             <button
@@ -683,7 +702,53 @@ export default function ChatPage() {
           </div>
         </div>
  
-        {/* Messages */}
+        {/* Active filters pill bar */}
+        <div className="px-4 py-2 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2 flex-wrap min-h-[36px]">
+          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest shrink-0">
+            Filters
+          </span>
+          {Object.keys(activeFilters).length === 0 ? (
+            <span className="text-[10px] text-gray-300 italic">No filters applied</span>
+          ) : (
+            Object.entries(activeFilters).map(([field, value]) => {
+              const label = field
+                .replace(/_/g, " ")
+                .replace(/\w/g, (c) => c.toUpperCase());
+              const display = Array.isArray(value)
+                ? (value as unknown[]).join(", ")
+                : String(value);
+              return (
+                <span
+                  key={field}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 border border-blue-200"
+                >
+                  <span className="text-blue-400">{label}:</span>
+                  <span className="truncate max-w-[120px]" title={display}>{display}</span>
+                  <button
+                    onClick={() => {
+                      // Remove this filter locally and clear session filters on backend
+                      const convId = activeConvIdRef.current;
+                      if (convId !== null) clearSessionFilters(convId).catch(console.error);
+                      setConvActiveFilters((prev) => {
+                        const next = new Map(prev);
+                        const current = { ...(next.get(activeConvId ?? "new") ?? {}) };
+                        delete current[field];
+                        next.set(activeConvId ?? "new", current);
+                        return next;
+                      });
+                    }}
+                    className="ml-0.5 hover:text-blue-900 transition-colors"
+                    title={`Remove ${label} filter`}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              );
+            })
+          )}
+        </div>
+ 
+      {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message) => (
             <MessageBubble

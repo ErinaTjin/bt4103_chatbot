@@ -1,6 +1,6 @@
 // Based on Python backend models
 // May need to change the variable name based on backend
-
+ 
 export type Intent =
   | "count"
   | "distribution"
@@ -9,17 +9,17 @@ export type Intent =
   | "mutation_prevalence"
   | "cohort_comparison"
   | "unsupported";
-
+ 
 export interface Filter {
   field: string;
   op: string;
   value: string | number | (string | number)[];
 }
-
+ 
 export interface OutputPrefs {
   preferred_visualization?: "bar" | "line" | "pie" | "metric" | "table" | string | null;
 }
-
+ 
 export interface QueryPlan {
   intent: Intent;
   metric: string;
@@ -32,12 +32,12 @@ export interface QueryPlan {
   intent_summary?: string;
   reasoning_summary?: string;
 }
-
+ 
 export interface Guardrails {
   ok: boolean;
   warnings: string[];
 }
-
+ 
 export interface QueryResponse {
   data: Record<string, string | number>[];
   sql: string;
@@ -50,8 +50,9 @@ export interface QueryResponse {
   metadata?: Record<string, unknown>;
   error?: string;
   resolved_question?: string;
+  active_filters?: Record<string, unknown>;
 }
-
+ 
 export type Message = {
   id: string;
   role: "user" | "assistant";
@@ -60,17 +61,17 @@ export type Message = {
   timestamp: string;
   kind?: "query" | "clarification" | "result" | "error";
 };
-
+ 
 // Helper type for table rows
 export type DataRow = Record<string, string | number>;
-
+ 
 // Past conversations / history
 export interface Conversation {
   id: number;
   title: string;
   created_at: string;
 }
-
+ 
 export interface ConversationMessage {
   id: number;
   conversation_id: number;
@@ -78,7 +79,7 @@ export interface ConversationMessage {
   content: string;
   timestamp: string;
 }
-
+ 
 // Admin audit log entry from /admin/logs
 export interface AuditLog {
   id: number;
@@ -95,7 +96,7 @@ export interface AuditLog {
   warnings: string;          // JSON-encoded string[]
   error_message: string | null;
 }
-
+ 
 // Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)
 export interface ChatResponse extends QueryResponse {
   session_id: string;

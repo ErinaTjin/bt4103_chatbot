@@ -1,10 +1,10 @@
 "use client";
-
+ 
 import React, { Component, ReactNode } from "react";
 import { VegaEmbed } from "react-vega";
 import { DataRow } from "@/lib/types";
-import { AlertCircle } from "lucide-react";
-
+import { AlertCircle, Download } from "lucide-react";
+ 
 const COLORS = [
   "#0088FE",
   "#00C49F",
@@ -20,7 +20,7 @@ const COLORS = [
   "#ffc2e0",
   "#e0fe5c",
 ];
-
+ 
 // Error boundary to catch Vega-Lite render failures gracefully
 class ChartErrorBoundary extends Component<
   { children: ReactNode; fallbackData: DataRow[] },
@@ -30,11 +30,11 @@ class ChartErrorBoundary extends Component<
     super(props);
     this.state = { hasError: false, errorMessage: "" };
   }
-
+ 
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, errorMessage: error.message };
   }
-
+ 
   render() {
     if (this.state.hasError) {
       return (
@@ -53,22 +53,22 @@ class ChartErrorBoundary extends Component<
     return this.props.children;
   }
 }
-
+ 
 interface ResultsChartProps {
   data: DataRow[];
   // Match backend exactly
   type: "bar" | "line" | "pie" | "stacked" | "metric" | string;
 }
-
+ 
 export function ResultsChart({ data, type }: ResultsChartProps) {
   if (!data || data.length === 0) return null;
-
+ 
   const keys = Object.keys(data[0]);
   const metricKeys = keys.slice(1);
-
+ 
   let dimensionKey: string;
   let primaryMetric: string;
-
+ 
   if (type === "metric" || metricKeys.length === 0) {
     primaryMetric = keys[0];
     dimensionKey = "";
@@ -76,7 +76,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
     dimensionKey = keys[0];
     primaryMetric = metricKeys[0];
   }
-
+ 
   // Detect single-row wide format with percentage pairs
   // e.g. {total_tested_patients, patients_with_kras, kras_percentage, ...}
   // Transform to long format for bar chart with percentage labels
@@ -88,7 +88,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       k.endsWith("_proportion"),
   );
   const totalKey = keys.find((k) => k.startsWith("total_"));
-
+ 
   const formatValue = (key: string, val: number): string => {
     if (
       key.includes("year") ||
@@ -107,7 +107,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
     }
     return val.toLocaleString();
   };
-
+ 
   const renderChart = () => {
     // Fallback: single row, single column → always metric card regardless of type
     // agent1 ten
@@ -129,7 +129,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         </div>
       );
     }
-
+ 
     // --- Wide-to-long transform (mutation prevalence / multi-attribute pivot) ---
     if (isSingleRowWide && pctKeys.length > 1 && type === "metric") {
       const longData = pctKeys.map((pctKey) => {
@@ -137,11 +137,11 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           .replace(/_percentage$|_pct$|_proportion$/, "")
           .replace(/_/g, " ")
           .replace(/\b\w/g, (c) => c.toUpperCase());
-
+ 
         // Extract base name to find paired count key
         // e.g. kras_percentage → kras → finds patients_with_kras
         const baseName = pctKey.replace(/_percentage$|_pct$|_proportion$/, "");
-
+ 
         const countKey = keys.find(
           (k) =>
             k !== pctKey &&
@@ -154,16 +154,16 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
               k.includes(`_${baseName}_`) ||
               k === baseName),
         );
-
+ 
         return {
           attribute: label,
           patient_count: countKey ? (data[0][countKey] as number) : 0,
           percentage: data[0][pctKey] as number,
         };
       });
-
+ 
       const totalValue = totalKey ? (data[0][totalKey] as number) : null;
-
+ 
       const wideSpec = {
         $schema: "https://vega.github.io/schema/vega-lite/v6.json",
         data: { values: longData },
@@ -229,7 +229,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           axis: { grid: false, domain: false, ticks: false, labelPadding: 10 },
         },
       };
-
+ 
       return (
         <div className="w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm overflow-hidden">
           {totalKey && (
@@ -251,7 +251,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             <ChartErrorBoundary fallbackData={data}>
               <VegaEmbed
                 spec={wideSpec}
-                options={{ actions: false }}
+                options={{ actions: { export: { svg: false, png: true }, source: false, compiled: false, editor: false } }}
                 style={{ width: "100%", height: "100%" }}
               />
             </ChartErrorBoundary>
@@ -259,7 +259,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         </div>
       );
     }
-
+ 
     // --- Standard chart types ---
     let spec: Record<string, unknown> = {
       $schema: "https://vega.github.io/schema/vega-lite/v6.json",
@@ -282,7 +282,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         },
       },
     };
-
+ 
     // Fallback: metric type but multiple rows → render as bar chart
     // Handles cases where Agent1 classifies multi-row results as 'count'
     // e.g. count by year returns 2 rows but was classified as count intent
@@ -290,13 +290,13 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
       const isYearDimension =
         keys[0].includes("year") || keys[0].includes("date");
       const chartType = isYearDimension && data.length > 3 ? "line" : "bar";
-
+ 
       // Detect all numeric columns and use first one for y-axis:
       const numericCols = keys
         .slice(1)
         .filter((k) => typeof data[0][k] === "number");
       const yField = numericCols[0] ?? keys[1];
-
+ 
       const multiRowSpec = {
         $schema: "https://vega.github.io/schema/vega-lite/v6.json",
         data: { values: data },
@@ -344,18 +344,18 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           axisY: { grid: true, gridDash: [3, 3] },
         },
       };
-
+ 
       return (
         <ChartErrorBoundary fallbackData={data}>
           <VegaEmbed
             spec={multiRowSpec}
-            options={{ actions: false }}
+            options={{ actions: { export: { svg: false, png: true }, source: false, compiled: false, editor: false } }}
             style={{ width: "100%", height: "100%" }}
           />
         </ChartErrorBoundary>
       );
     }
-
+ 
     switch (type) {
       case "pie":
         spec = {
@@ -377,12 +377,12 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           },
         };
         break;
-
+ 
       case "line":
         const isMultiSeries = keys.length === 3;
         const seriesKey = isMultiSeries ? keys[1] : null;
         const lineMetric = isMultiSeries ? keys[2] : primaryMetric;
-
+ 
         spec = {
           ...spec,
           height: 250, 
@@ -422,7 +422,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           },
         };
         break;
-
+ 
       case "stacked":
         // Stacked bar: requires 2 dimensions + 1 metric
         // uses second key as the stack group, first key as x-axis
@@ -461,7 +461,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           },
         };
         break;
-
+ 
       case "metric":
         // Handle multiple scalar metrics - show as side-by-side cards
         if (keys.length > 1) {
@@ -505,7 +505,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
           </div>
         );
         break;
-
+ 
       case "bar":
       default: {
         // Detect cohort comparison: 2+ dimension columns before the metric
@@ -518,13 +518,13 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         );
         const dimensionKeys = keys.filter((k) => !numericKeys.includes(k));
         const isGrouped = dimensionKeys.length >= 2;
-
+ 
         if (isGrouped) {
           // Grouped bar chart: x = first dimension, color = second dimension
           const xDim = dimensionKeys[0];
           const colorDim = dimensionKeys[1];
           const metric = numericKeys[0] ?? primaryMetric;
-
+ 
           // Use ordinal for numeric year/date fields — nominal breaks Vega-Lite rendering
           const xType = isYearOrDate(xDim) ? "ordinal" : "nominal";
           // Convert year/date to string for consistent ordinal rendering
@@ -532,7 +532,7 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
             ...row,
             ...(isYearOrDate(xDim) ? { [xDim]: String(row[xDim]) } : {}),
           }));
-
+ 
           spec = {
             ...spec,
             data: { values: chartData },
@@ -618,22 +618,22 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         break;
       }
     }
-
+ 
     return (
       <ChartErrorBoundary fallbackData={data}>
         <VegaEmbed
           spec={spec}
-          options={{ actions: false }}
+          options={{ actions: { export: { svg: false, png: true }, source: false, compiled: false, editor: false } }}
           style={{ width: "100%", height: "100%" }}
         />
       </ChartErrorBoundary>
     );
   };
-
+ 
   // Use h-auto for wide-to-long charts so they aren't clipped
   const isWideToLong =
     isSingleRowWide && pctKeys.length > 1 && type === "metric";
-
+ 
   // Map internal type -> user-friendly label
   const chartTypeLabelMap: Record<string, string> = {
     line: "Line Chart",
@@ -641,12 +641,12 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
     metric: "Metric",
     table: "Table",
   };
-
+ 
   const displayType = chartTypeLabelMap[type] ?? type;
-
+ 
   return (
     <div
-      className={`w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm ${
+      className={`relative w-full mt-4 bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 shadow-sm ${
         isWideToLong || type === "metric" || type === "pie" || type === "line" || type === "stacked" 
           ? "h-auto overflow-hidden" 
           : "h-72 overflow-visible"
@@ -659,7 +659,13 @@ export function ResultsChart({ data, type }: ResultsChartProps) {
         </p>
         <p className="text-sm font-semibold text-gray-800">{displayType}</p>
       </div>
-
+ 
+      {/* PNG export hint — Vega renders a "..." menu on hover with PNG download */}
+      <div className="absolute top-3 right-3 flex items-center gap-1 text-[10px] text-gray-300 pointer-events-none select-none">
+        <Download className="w-3 h-3" />
+        <span>Hover chart to export PNG</span>
+      </div>
+ 
       {renderChart()}
     </div>
   );

@@ -66,6 +66,7 @@ export async function queryBackend(
     // is normal for clarification responses and does not mean the query failed.
     // A synthetic error string stored in the DB causes output to disappear on restore.
     error: raw.error || undefined,
+    active_filters: raw.active_filters ?? {},
   };
 }
  
