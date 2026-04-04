@@ -17,7 +17,7 @@ function parseJsonField(raw: string | null): string[] {
 
 // ── chart specs ───────────────────────────────────────────────────────────────
 
-function latencySpec(rows: { time: string; ms: number }[]): Record<string, unknown> {
+function latencySpec(rows: { index: number; sec: number; time: string }[]): Record<string, unknown> {
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
     data: { values: rows },
@@ -25,11 +25,12 @@ function latencySpec(rows: { time: string; ms: number }[]): Record<string, unkno
     height: 220,
     mark: { type: "line", point: true, color: "#6366f1" },
     encoding: {
-      x: { field: "time", type: "temporal", title: "Time", axis: { labelAngle: -30 } },
-      y: { field: "ms", type: "quantitative", title: "Latency (s)" },
+      x: { field: "index", type: "quantitative", title: "Query #", axis: { tickMinStep: 1 } },
+      y: { field: "sec", type: "quantitative", title: "Latency (s)" },
       tooltip: [
+        { field: "index", type: "quantitative", title: "Query #" },
+        { field: "sec", type: "quantitative", title: "Latency (s)" },
         { field: "time", type: "temporal", title: "Time" },
-        { field: "ms", type: "quantitative", title: "Latency (s)" },
       ],
     },
   };
@@ -124,7 +125,7 @@ export default function AdminDashboard() {
     const headers = [
       "id", "timestamp", "username", "session_id",
       "nl_question", "resolved_question", "generated_sql",
-      "latency_ms", "row_count", "guardrail_decision",
+      "latency_s", "row_count", "guardrail_decision",
       "guardrail_reasons", "warnings", "error_message",
     ];
 
@@ -144,7 +145,7 @@ export default function AdminDashboard() {
       l.nl_question ?? "",
       l.resolved_question ?? "",
       l.generated_sql ?? "",
-      l.execution_ms ?? "",
+      l.execution_ms !== null ? (l.execution_ms / 1000).toFixed(2) : "",
       l.row_count ?? "",
       l.guardrail_decision,
       l.guardrail_reasons,
@@ -162,10 +163,12 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  const latencyRows = logs
-    .filter((l) => l.execution_ms !== null)
-    .map((l) => ({ time: l.timestamp, ms: Math.round((l.execution_ms as number) / 1000 * 100) / 100 }))
-    .reverse(); // oldest first for line chart
+  const filteredLatency = logs.filter((l) => l.execution_ms !== null).reverse(); // oldest first
+  const latencyRows = filteredLatency.map((l, i) => ({
+    index: i + 1,                                        // Query #1, #2, #3...
+    sec: (l.execution_ms as number) / 1000,
+    time: l.timestamp,                                   // kept for tooltip only
+  }));
 
   const reasonCounts: Record<string, number> = {};
   logs
@@ -186,7 +189,7 @@ export default function AdminDashboard() {
   const blockedCount = logs.filter((l) => l.guardrail_decision === "block").length;
   const avgLatency =
     latencyRows.length > 0
-      ? Math.round(latencyRows.reduce((s, r) => s + r.ms, 0) / latencyRows.length * 100) / 100
+      ? latencyRows.reduce((s, r) => s + r.sec, 0) / latencyRows.length
       : null;
 
   // ── render ──────────────────────────────────────────────────────────────────
@@ -257,7 +260,7 @@ export default function AdminDashboard() {
           />
           <StatCard
             label="Avg Latency"
-            value={avgLatency !== null ? `${avgLatency.toFixed(2)} s` : "—"}
+            value={avgLatency !== null ? `${avgLatency.toFixed(2)}s` : "—"}
             icon={<RefreshCw size={18} />}
             accent="indigo"
           />
@@ -397,7 +400,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="py-1.5 pr-3 text-right">
-                        {l.execution_ms !== null ? `${(l.execution_ms / 1000).toFixed(2)} s` : "—"}
+                        {l.execution_ms !== null ? `${(l.execution_ms / 1000).toFixed(2)}s` : "—"}
                       </td>
                       <td className="py-1.5 text-right">
                         {l.row_count !== null ? l.row_count : "—"}
