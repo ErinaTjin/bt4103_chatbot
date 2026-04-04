@@ -1,5 +1,5 @@
 "use client";
-
+ 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -7,16 +7,16 @@ import { getAdminLogs } from "@/lib/api";
 import { AuditLog } from "@/lib/types";
 import { VegaEmbed } from "react-vega";
 import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut, Download } from "lucide-react";
-
+ 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
+ 
 function parseJsonField(raw: string | null): string[] {
   if (!raw) return [];
   try { return JSON.parse(raw); } catch { return []; }
 }
-
+ 
 // ── chart specs ───────────────────────────────────────────────────────────────
-
+ 
 function latencySpec(rows: { index: number; sec: number; time: string }[]): Record<string, unknown> {
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
@@ -35,7 +35,7 @@ function latencySpec(rows: { index: number; sec: number; time: string }[]): Reco
     },
   };
 }
-
+ 
 function blockedSpec(rows: { reason: string; count: number }[]): Record<string, unknown> {
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
@@ -53,25 +53,22 @@ function blockedSpec(rows: { reason: string; count: number }[]): Record<string, 
     },
   };
 }
-
+ 
 // ── main component ────────────────────────────────────────────────────────────
-
+ 
 export default function AdminDashboard() {
   const { user, isAdmin, loading, logout } = useAuth();
   const router = useRouter();
-
+ 
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-
-  // Redirect unauthenticated users to login after auth resolves
+ 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
+    if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
-
+ 
   const fetchLogs = useCallback(async () => {
     setFetching(true);
     setError(null);
@@ -85,11 +82,11 @@ export default function AdminDashboard() {
       setFetching(false);
     }
   }, []);
-
+ 
   useEffect(() => {
     if (isAdmin) fetchLogs();
   }, [isAdmin, fetchLogs]);
-
+ 
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950 text-gray-400">
@@ -97,7 +94,7 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
+ 
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
@@ -117,10 +114,8 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
-  // ── derived data ────────────────────────────────────────────────────────────
-
-  // ── CSV export ────────────────────────────────────────────────────────────
+ 
+  // ── CSV export ──────────────────────────────────────────────────────────────
   const downloadCSV = () => {
     const headers = [
       "id", "timestamp", "username", "session_id",
@@ -128,7 +123,7 @@ export default function AdminDashboard() {
       "latency_s", "row_count", "guardrail_decision",
       "guardrail_reasons", "warnings", "error_message",
     ];
-
+ 
     const escape = (val: unknown): string => {
       if (val === null || val === undefined) return "";
       const str = String(val).replace(/"/g, '""');
@@ -136,7 +131,7 @@ export default function AdminDashboard() {
         ? `"${str}"`
         : str;
     };
-
+ 
     const rows = logs.map((l) => [
       l.id,
       l.timestamp,
@@ -152,7 +147,7 @@ export default function AdminDashboard() {
       l.warnings,
       l.error_message ?? "",
     ].map(escape).join(","));
-
+ 
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -162,14 +157,16 @@ export default function AdminDashboard() {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  const filteredLatency = logs.filter((l) => l.execution_ms !== null).reverse(); // oldest first
+ 
+  // ── derived data ────────────────────────────────────────────────────────────
+ 
+  const filteredLatency = logs.filter((l) => l.execution_ms !== null).reverse();
   const latencyRows = filteredLatency.map((l, i) => ({
-    index: i + 1,                                        // Query #1, #2, #3...
+    index: i + 1,
     sec: (l.execution_ms as number) / 1000,
-    time: l.timestamp,                                   // kept for tooltip only
+    time: l.timestamp,
   }));
-
+ 
   const reasonCounts: Record<string, number> = {};
   logs
     .filter((l) => l.guardrail_decision === "block")
@@ -182,21 +179,19 @@ export default function AdminDashboard() {
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
-
+ 
   const errorLogs = logs.filter((l) => l.error_message || l.guardrail_decision === "error");
-
   const totalQueries = logs.length;
   const blockedCount = logs.filter((l) => l.guardrail_decision === "block").length;
   const avgLatency =
     latencyRows.length > 0
       ? latencyRows.reduce((s, r) => s + r.sec, 0) / latencyRows.length
       : null;
-
+ 
   // ── render ──────────────────────────────────────────────────────────────────
-
+ 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      {/* Top bar */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <ShieldAlert className="text-indigo-400" size={22} />
@@ -217,15 +212,6 @@ export default function AdminDashboard() {
             Refresh
           </button>
           <button
-            onClick={downloadCSV}
-            disabled={logs.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-sm transition-colors"
-            title="Download query log as CSV"
-          >
-            <Download size={14} />
-            Export CSV
-          </button>
-          <button
             onClick={() => router.push("/chat")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm transition-colors"
           >
@@ -240,7 +226,7 @@ export default function AdminDashboard() {
           </button>
         </div>
       </header>
-
+ 
       <main className="p-6 space-y-6 max-w-screen-xl mx-auto">
         {error && (
           <div className="flex items-center gap-2 p-4 rounded-lg bg-red-950 border border-red-700 text-red-300 text-sm">
@@ -248,7 +234,7 @@ export default function AdminDashboard() {
             {error}
           </div>
         )}
-
+ 
         {/* KPI cards */}
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Total Queries" value={totalQueries} icon={<Activity size={18} />} />
@@ -265,10 +251,9 @@ export default function AdminDashboard() {
             accent="indigo"
           />
         </div>
-
+ 
         {/* Charts row */}
         <div className="grid grid-cols-2 gap-4">
-          {/* Latency over time */}
           <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
             <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
               <Activity size={15} className="text-indigo-400" />
@@ -280,8 +265,7 @@ export default function AdminDashboard() {
               <VegaEmbed spec={latencySpec(latencyRows)} options={{ actions: false }} style={{ width: "100%" }} />
             )}
           </div>
-
-          {/* Blocked queries by reason */}
+ 
           <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
             <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
               <ShieldAlert size={15} className="text-rose-400" />
@@ -294,7 +278,7 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-
+ 
         {/* Recent errors */}
         <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
@@ -334,7 +318,7 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
-
+ 
         {/* Full query log */}
         <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
           <div className="flex items-center justify-between mb-3">
@@ -378,10 +362,7 @@ export default function AdminDashboard() {
                         {new Date(l.timestamp).toLocaleString()}
                       </td>
                       <td className="py-1.5 pr-3 whitespace-nowrap">{l.username ?? "—"}</td>
-                      <td
-                        className="py-1.5 pr-3 max-w-xs truncate"
-                        title={l.nl_question ?? ""}
-                      >
+                      <td className="py-1.5 pr-3 max-w-xs truncate" title={l.nl_question ?? ""}>
                         {l.nl_question ?? "—"}
                       </td>
                       <td className="py-1.5 pr-3">
@@ -416,9 +397,9 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
+ 
 // ── sub-components ─────────────────────────────────────────────────────────────
-
+ 
 function StatCard({
   label,
   value,
@@ -446,7 +427,7 @@ function StatCard({
     </div>
   );
 }
-
+ 
 function EmptyState({ text }: { text: string }) {
   return (
     <div className="flex items-center justify-center h-24 text-gray-600 text-sm">{text}</div>
