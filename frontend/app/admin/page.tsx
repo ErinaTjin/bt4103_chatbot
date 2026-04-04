@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getAdminLogs } from "@/lib/api";
 import { AuditLog } from "@/lib/types";
 import { VegaEmbed } from "react-vega";
-import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut } from "lucide-react";
+import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut, Download } from "lucide-react";
  
 // ── helpers ───────────────────────────────────────────────────────────────────
  
@@ -119,6 +119,49 @@ export default function AdminDashboard() {
  
   // ── derived data ────────────────────────────────────────────────────────────
  
+  // ── CSV export ────────────────────────────────────────────────────────────
+  const downloadCSV = () => {
+    const headers = [
+      "id", "timestamp", "username", "session_id",
+      "nl_question", "resolved_question", "generated_sql",
+      "latency_s", "row_count", "guardrail_decision",
+      "guardrail_reasons", "warnings", "error_message",
+    ];
+ 
+    const escape = (val: unknown): string => {
+      if (val === null || val === undefined) return "";
+      const str = String(val).replace(/"/g, '""');
+      return str.includes(",") || str.includes('"') || str.includes("\n")
+        ? `"${str}"`
+        : str;
+    };
+ 
+    const rows = logs.map((l) => [
+      l.id,
+      l.timestamp,
+      l.username ?? "",
+      l.session_id ?? "",
+      l.nl_question ?? "",
+      l.resolved_question ?? "",
+      l.generated_sql ?? "",
+      l.execution_ms !== null ? (l.execution_ms / 1000).toFixed(2) : "",
+      l.row_count ?? "",
+      l.guardrail_decision,
+      l.guardrail_reasons,
+      l.warnings,
+      l.error_message ?? "",
+    ].map(escape).join(","));
+ 
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `anchor_query_log_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+ 
   const latencyRows = logs
     .filter((l) => l.execution_ms !== null)
     .map((l) => ({ time: l.timestamp, ms: Math.round((l.execution_ms as number) / 1000 * 100) / 100 }))
@@ -169,6 +212,15 @@ export default function AdminDashboard() {
           >
             <RefreshCw size={14} className={fetching ? "animate-spin" : ""} />
             Refresh
+          </button>
+          <button
+            onClick={downloadCSV}
+            disabled={logs.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-sm transition-colors"
+            title="Download query log as CSV"
+          >
+            <Download size={14} />
+            Export CSV
           </button>
           <button
             onClick={() => router.push("/chat")}
@@ -279,7 +331,7 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
-
+ 
         {/* Full query log */}
         <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
           <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
