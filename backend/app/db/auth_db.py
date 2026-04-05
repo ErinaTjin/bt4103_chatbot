@@ -50,6 +50,10 @@ def init_db() -> None:
                 timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migrate old sessions table keyed by user_id → drop and recreate keyed by conversation_id
+        old_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+        if old_cols and "conversation_id" not in old_cols:
+            conn.execute("DROP TABLE sessions")
         # Sessions keyed by conversation_id — each conversation has its own
         # isolated NL2SQL state (active_filters, chat_history for Agent 0).
         # This prevents different conversations from sharing session memory.
@@ -76,9 +80,15 @@ def init_db() -> None:
                 guardrail_decision TEXT NOT NULL DEFAULT 'pass',
                 guardrail_reasons  TEXT,
                 warnings         TEXT,
-                error_message    TEXT
+                error_message    TEXT,
+                result_preview   TEXT
             )
         """)
+        # Add result_preview to existing databases that predate this column
+        try:
+            conn.execute("ALTER TABLE audit_logs ADD COLUMN result_preview TEXT")
+        except Exception:
+            pass  # column already exists
         conn.commit()
 
     # Seed default accounts if no users exist
@@ -177,14 +187,16 @@ def write_audit_log(
     guardrail_reasons: list[str] | None = None,
     warnings: list[str] | None = None,
     error_message: str | None = None,
+    result_preview: list[dict] | None = None,
 ) -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO audit_logs (
                 user_id, username, session_id, nl_question, resolved_question,
                 generated_sql, execution_ms, row_count,
-                guardrail_decision, guardrail_reasons, warnings, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                guardrail_decision, guardrail_reasons, warnings, error_message,
+                result_preview
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id,
                 username,
@@ -198,6 +210,7 @@ def write_audit_log(
                 json.dumps(guardrail_reasons or []),
                 json.dumps(warnings or []),
                 error_message,
+                json.dumps(result_preview[:10]) if result_preview else None,
             ),
         )
         conn.commit()
@@ -207,7 +220,8 @@ def get_audit_logs(limit: int = 200, offset: int = 0) -> list[dict]:
         rows = conn.execute(
             """SELECT id, timestamp, username, session_id, nl_question,
                       resolved_question, generated_sql, execution_ms, row_count,
-                      guardrail_decision, guardrail_reasons, warnings, error_message
+                      guardrail_decision, guardrail_reasons, warnings, error_message,
+                      result_preview
                FROM audit_logs
                ORDER BY timestamp DESC
                LIMIT ? OFFSET ?""",

@@ -41,7 +41,8 @@ export async function queryBackend(
  
   if (!response.ok) {
     handleUnauthorized(response.status);
-    throw new Error(`Backend error: ${response.status}`);
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail ?? `Backend error: ${response.status}`);
   }
  
   const raw = await response.json();

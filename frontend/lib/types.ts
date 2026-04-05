@@ -95,6 +95,7 @@ export interface AuditLog {
   guardrail_reasons: string; // JSON-encoded string[]
   warnings: string;          // JSON-encoded string[]
   error_message: string | null;
+  result_preview: string | null; // JSON-encoded first 10 result rows
 }
  
 // Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)

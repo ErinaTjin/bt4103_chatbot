@@ -56,7 +56,11 @@ app = FastAPI(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logging.error("Unhandled exception:\n" + traceback.format_exc())
+    logging.error(
+        "Unhandled exception on %s %s: %s",
+        request.method, request.url.path, exc,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 app.add_middleware(
@@ -306,11 +310,15 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     state = load_session(conv_id)
  
     # ── Agent 0: resolve follow-up into standalone question ──
-    resolution = context_agent.resolve(
-        question=req.question,
-        conversation_history=state["chat_history"],
-        active_filters=state["active_filters"],
-    )
+    try:
+        resolution = context_agent.resolve(
+            question=req.question,
+            conversation_history=state["chat_history"],
+            active_filters=state["active_filters"],
+        )
+    except Exception as e:
+        logging.error("context_agent.resolve failed: %s", e, exc_info=True)
+        raise
  
     if resolution.needs_clarification:
         write_audit_log(
@@ -359,14 +367,21 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
  
     elapsed_ms = int((time.perf_counter() - t_start) * 1000)
     data_obj   = result.get("data") or {}
+    rows_list  = data_obj.get("rows") if isinstance(data_obj, dict) else None
     row_count  = data_obj.get("row_count") if isinstance(data_obj, dict) else None
     warnings   = result.get("warnings", [])
     generated_sql = result.get("sql", "")
     executed   = result.get("executed", False)
- 
+
+    error_msg = result.get("error")
     blocking = [w for w in warnings if not w.startswith("Assumption:")]
-    guardrail_decision = "block" if not executed and blocking else "pass"
- 
+    if error_msg:
+        guardrail_decision = "error"
+    elif not executed and blocking:
+        guardrail_decision = "block"
+    else:
+        guardrail_decision = "pass"
+
     write_audit_log(
         user_id=user_id, username=username, session_id=req.session_id,
         nl_question=req.question, resolved_question=resolved_q,
@@ -374,6 +389,7 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
         row_count=row_count, guardrail_decision=guardrail_decision,
         guardrail_reasons=blocking if guardrail_decision == "block" else [],
         warnings=warnings, error_message=result.get("error"),
+        result_preview=rows_list,
     )
  
     # ── Update session state scoped to this conversation ──

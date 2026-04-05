@@ -13,11 +13,19 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:80
 const STORAGE_KEY = "auth_user";
  
 export async function login(username: string, password: string): Promise<AuthUser | null> {
-  const res = await fetch(`${BACKEND_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) return null;
   const data = await res.json();
   const user: AuthUser = { username: data.username, role: data.role, token: data.access_token };

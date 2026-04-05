@@ -122,6 +122,7 @@ export default function AdminDashboard() {
       "nl_question", "resolved_question", "generated_sql",
       "latency_s", "row_count", "guardrail_decision",
       "guardrail_reasons", "warnings", "error_message",
+      "result_preview",
     ];
  
     const escape = (val: unknown): string => {
@@ -146,6 +147,7 @@ export default function AdminDashboard() {
       l.guardrail_reasons,
       l.warnings,
       l.error_message ?? "",
+      l.result_preview ?? "",
     ].map(escape).join(","));
  
     const csv = [headers.join(","), ...rows].join("\n");
@@ -164,7 +166,7 @@ export default function AdminDashboard() {
   const latencyRows = filteredLatency.map((l, i) => ({
     index: i + 1,
     sec: (l.execution_ms as number) / 1000,
-    time: l.timestamp,
+    time: l.timestamp + 'Z',                             // UTC → local for tooltip
   }));
  
   const reasonCounts: Record<string, number> = {};
@@ -302,7 +304,7 @@ export default function AdminDashboard() {
                   {errorLogs.slice(0, 50).map((l) => (
                     <tr key={l.id} className="hover:bg-gray-800/50">
                       <td className="py-1.5 pr-4 whitespace-nowrap text-gray-500">
-                        {new Date(l.timestamp).toLocaleString()}
+                        {new Date(l.timestamp + 'Z').toLocaleString()}
                       </td>
                       <td className="py-1.5 pr-4 whitespace-nowrap">{l.username ?? "—"}</td>
                       <td className="py-1.5 pr-4 max-w-xs truncate" title={l.nl_question ?? ""}>
@@ -359,7 +361,7 @@ export default function AdminDashboard() {
                         #{logs.length - index}
                       </td>
                       <td className="py-1.5 pr-3 whitespace-nowrap text-gray-500">
-                        {new Date(l.timestamp).toLocaleString()}
+                        {new Date(l.timestamp + 'Z').toLocaleString()}
                       </td>
                       <td className="py-1.5 pr-3 whitespace-nowrap">{l.username ?? "—"}</td>
                       <td className="py-1.5 pr-3 max-w-xs truncate" title={l.nl_question ?? ""}>

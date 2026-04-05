@@ -73,6 +73,9 @@ export default function LoginPage() {
         setUser(newUser);
         router.push("/chat");
       }
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === "AbortError";
+      setError(isTimeout ? "Request timed out — is the backend running?" : "Cannot reach server. Please try again.");
     } finally {
       setSubmitting(false);
     }
