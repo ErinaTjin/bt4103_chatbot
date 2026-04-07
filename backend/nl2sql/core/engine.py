@@ -601,12 +601,9 @@ class NL2SQLEngine:
         user_query: str,
         clarification_question: str | None = None,
     ) -> bool:
-        mode_normalized = str(mode).lower()
-        if mode_normalized == "fast":
-            return False
-        if mode_normalized == "strict":
-            return self._is_high_risk_clarification(user_query, clarification_question)
-        return False
+        # If an upstream agent requests clarification, always ask it.
+        # This avoids silently continuing to SQL generation with ambiguous intent.
+        return True
 
     def translate(
         self,
@@ -688,6 +685,10 @@ class NL2SQLEngine:
             )
 
         if agent1.needs_clarification:
+            clarification_text = (
+                agent1.clarification_question
+                or "Could you clarify your request?"
+            )
             should_ask = self._should_ask_clarification(
                 mode=mode,
                 user_query=user_query,
@@ -703,12 +704,12 @@ class NL2SQLEngine:
                     plan={
                         "intent_summary": agent1.intent_summary,
                         "needs_clarification": True,
-                        "clarification_question": agent1.clarification_question,
+                        "clarification_question": clarification_text,
                         "active_filters": agent1.active_filters,
                         "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
                     },
                     valid=False,
-                    warnings=[agent1.clarification_question or "Clarification required."],
+                    warnings=[clarification_text],
                     plan_agent0=plan_agent0,
                     plan_agent1=plan_agent1,
                     plan_agent2=None,

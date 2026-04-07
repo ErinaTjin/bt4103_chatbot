@@ -136,12 +136,8 @@ class NL2SQLLangGraph:
         user_query: str,
         clarification_question: str | None = None,
     ) -> bool:
-        mode_normalized = str(mode).lower()
-        if mode_normalized == "fast":
-            return False
-        if mode_normalized == "strict":
-            return self._is_high_risk_clarification(user_query, clarification_question)
-        return False
+        # If an upstream agent requests clarification, always ask it.
+        return True
 
     def _clarification_ask_count(self, history: List[Dict[str, Any] | str] | None) -> int:
         if not history:
@@ -193,7 +189,7 @@ class NL2SQLLangGraph:
     def _route_after_context(self, state: GraphState) -> str:
         context_resolution = state.get("context_resolution", {})
         if context_resolution.get("needs_clarification", False):
-            clarification_question = context_resolution.get("clarification_question")
+            clarification_question = context_resolution.get("clarification_question") or "Could you clarify your request?"
             should_ask = self._should_ask_clarification(
                 mode=state.get("mode", "fast"),
                 user_query=state.get("user_query", ""),
@@ -236,7 +232,7 @@ class NL2SQLLangGraph:
         if agent1.get("intent") == "unsupported":
             return "to_finalize"
         if agent1.get("needs_clarification", False):
-            clarification_question = agent1.get("clarification_question")
+            clarification_question = agent1.get("clarification_question") or "Could you clarify your request?"
             should_ask = self._should_ask_clarification(
                 mode=state.get("mode", "fast"),
                 user_query=state.get("resolved_question") or state.get("user_query", ""),
@@ -416,21 +412,19 @@ class NL2SQLLangGraph:
             )
             return {"result": result}
         if context_resolution.get("needs_clarification", False):
+            clarification_text = context_resolution.get("clarification_question") or "Could you clarify your request?"
             result = TranslationResult(
                 sql="",
                 plan={
                     "resolved_question": state.get("resolved_question", ""),
                     "needs_clarification": True,
-                    "clarification_question": context_resolution.get("clarification_question"),
+                    "clarification_question": clarification_text,
                     "context_summary": context_resolution.get("context_summary"),
                     "active_filters": state.get("active_filters", {}),
                     "extracted_filters": [],
                 },
                 valid=False,
-                warnings=[
-                    context_resolution.get("clarification_question")
-                    or "Clarification required for follow-up context."
-                ],
+                warnings=[clarification_text],
                 plan_agent1=None,
                 plan_agent2=None,
             )
@@ -460,20 +454,19 @@ class NL2SQLLangGraph:
         needs_clarification = agent1.get("needs_clarification", False)
 
         if needs_clarification:
+            clarification_text = agent1.get("clarification_question") or "Could you clarify your request?"
             result = TranslationResult(
                 sql="",
                 plan={
                     "resolved_question": state.get("resolved_question", ""),
                     "intent_summary": agent1.get("intent_summary", ""),
                     "needs_clarification": True,
-                    "clarification_question": agent1.get("clarification_question"),
+                    "clarification_question": clarification_text,
                     "active_filters": agent1.get("active_filters", {}),
                     "extracted_filters": agent1.get("extracted_filters", []),
                 },
                 valid=False,
-                warnings=[
-                    agent1.get("clarification_question") or "Clarification required."
-                ],
+                warnings=[clarification_text],
                 plan_agent1=state.get("plan_agent1"),
                 plan_agent2=None,
             )
