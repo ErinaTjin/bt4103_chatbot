@@ -44,6 +44,7 @@ Rules:
   {{"field": "year", "op": "<=", "value": "2020"}}
  
 DATA AVAILABILITY — set intent='unsupported' for any of the following:
+- Any request to write, update, insert, delete, or modify data (for example: "delete the 2010 record").
 - The question asks about a cancer type NOT in this dataset. The ONLY cancer types currently available are colorectal cancers.
   Examples that must be unsupported:
     "how many lung cancer patients" → unsupported (C34 not in dataset)

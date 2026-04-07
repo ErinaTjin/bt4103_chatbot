@@ -233,6 +233,8 @@ class NL2SQLLangGraph:
 
     def _route_after_agent1(self, state: GraphState) -> str:
         agent1 = state["agent1"]
+        if agent1.get("intent") == "unsupported":
+            return "to_finalize"
         if agent1.get("needs_clarification", False):
             clarification_question = agent1.get("clarification_question")
             should_ask = self._should_ask_clarification(
@@ -367,6 +369,31 @@ class NL2SQLLangGraph:
 
     def _node_finalize(self, state: GraphState) -> GraphState:
         context_resolution = state.get("context_resolution", {})
+        agent1 = state.get("agent1", {})
+
+        if agent1.get("intent") == "unsupported":
+            unsupported_message = "It is a forbidden act."
+            result = TranslationResult(
+                sql="",
+                plan={
+                    "intent": agent1.get("intent", "unsupported"),
+                    "intent_summary": agent1.get("intent_summary", ""),
+                    "resolved_question": state.get("resolved_question", ""),
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "context_summary": context_resolution.get("context_summary"),
+                    "active_filters": agent1.get("active_filters", {}),
+                    "extracted_filters": agent1.get("extracted_filters", []),
+                    "error": "unsupported_intent",
+                    "error_message": unsupported_message,
+                },
+                valid=False,
+                warnings=[unsupported_message],
+                plan_agent0=state.get("plan_agent0"),
+                plan_agent1=state.get("plan_agent1"),
+                plan_agent2=None,
+            )
+            return {"result": result}
 
         if state.get("clarification_limit_exceeded", False):
             result = TranslationResult(
@@ -430,7 +457,6 @@ class NL2SQLLangGraph:
             )
             return {"result": result}
 
-        agent1 = state.get("agent1", {})
         needs_clarification = agent1.get("needs_clarification", False)
 
         if needs_clarification:

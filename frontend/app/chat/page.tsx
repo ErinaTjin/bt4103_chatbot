@@ -457,10 +457,16 @@ export default function ChatPage() {
         role: "assistant",
         content: needsClarification
           ? clarificationQuestion || "Could you clarify your request?"
-          : "Here are your results:",
+          : !result.executed && (result.warnings?.length ?? 0) > 0
+            ? result.warnings[0]
+            : "Here are your results:",
         result,
         timestamp: new Date().toISOString(),
-        kind: needsClarification ? "clarification" : "result",
+        kind: needsClarification
+          ? "clarification"
+          : !result.executed && (result.warnings?.length ?? 0) > 0
+            ? "error"
+            : "result",
       };
 
       // Always update the correct conversation's messages regardless of

@@ -308,12 +308,27 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
  
     # Load session state scoped to THIS conversation
     state = load_session(conv_id)
+    request_history = req.conversation_history or []
+    session_history = state.get("chat_history", [])
+    conversation_history = request_history if request_history else session_history
+    pending_clarification = state.get("pending_clarification")
+    context_question = req.question
+    if isinstance(pending_clarification, dict):
+        original_question = str(pending_clarification.get("original_question", "")).strip()
+        clarification_question = str(pending_clarification.get("clarification_question", "")).strip()
+        if original_question:
+            context_question = (
+                "Previous question awaiting clarification:\n"
+                f"{original_question}\n\n"
+                f"Clarification asked: {clarification_question or 'Clarification required.'}\n"
+                f"User answer: {req.question}"
+            )
  
     # ── Agent 0: resolve follow-up into standalone question ──
     try:
         resolution = context_agent.resolve(
-            question=req.question,
-            conversation_history=state["chat_history"],
+            question=context_question,
+            conversation_history=conversation_history,
             active_filters=state["active_filters"],
         )
     except Exception as e:
@@ -321,21 +336,37 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
         raise
  
     if resolution.needs_clarification:
+        clarification_message = resolution.clarification_question or "Clarification required."
         write_audit_log(
             user_id=user_id, username=username, session_id=req.session_id,
             nl_question=req.question,
             guardrail_decision="clarification",
-            guardrail_reasons=[resolution.clarification_question or ""],
+            guardrail_reasons=[clarification_message],
         )
+        state["chat_history"].append({"role": "user", "content": req.question})
+        state["chat_history"].append({"role": "assistant", "content": clarification_message})
+        state["chat_history"] = state["chat_history"][-40:]
+        state["pending_clarification"] = {
+            "original_question": req.question,
+            "resolved_question": resolution.standalone_question,
+            "clarification_question": clarification_message,
+        }
+        save_session(conv_id, state)
         return {
             "session_id": req.session_id,
             "question": req.question,
-            "resolved_question": req.question,
+            "resolved_question": resolution.standalone_question,
             "sql": "",
-            "plan": {"needs_clarification": True,
-                     "clarification_question": resolution.clarification_question},
-            "plan_agent0": None, "plan_agent1": None, "plan_agent2": None,
-            "warnings": [resolution.clarification_question],
+            "plan": {
+                "resolved_question": resolution.standalone_question,
+                "needs_clarification": True,
+                "clarification_question": resolution.clarification_question,
+                "active_filters": state["active_filters"],
+                "context_summary": resolution.context_summary,
+            },
+            "plan_agent0": resolution.model_dump(),
+            "plan_agent1": None, "plan_agent2": None,
+            "warnings": [clarification_message],
             "executed": False, "data": None,
             "active_filters": state["active_filters"],
             "chat_history": state["chat_history"],
@@ -403,6 +434,8 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
         {**state["active_filters"], **new_filter_dict}
         if resolution.is_follow_up else new_filter_dict
     )
+
+    state["pending_clarification"] = None
  
     state["chat_history"].append({"role": "user",      "content": req.question})
     state["chat_history"].append({"role": "assistant",  "content": resolved_q})

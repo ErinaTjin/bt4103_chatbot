@@ -118,6 +118,7 @@ def _empty_state() -> dict[str, Any]:
         "active_filters": {},
         "last_sql": None,
         "warnings": [],
+        "pending_clarification": None,
     }
 
 def load_session(conversation_id: int) -> dict[str, Any]:

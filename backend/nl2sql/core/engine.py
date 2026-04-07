@@ -665,6 +665,28 @@ class NL2SQLEngine:
 
         log.info("Agent1 output: %s", agent1.model_dump())
 
+        if agent1.intent.value == "unsupported":
+            unsupported_message = "It is a forbidden act."
+            return TranslationResult(
+                sql="",
+                plan={
+                    "intent": agent1.intent.value,
+                    "intent_summary": agent1.intent_summary,
+                    "resolved_question": resolved_query,
+                    "needs_clarification": False,
+                    "clarification_question": None,
+                    "active_filters": agent1.active_filters,
+                    "extracted_filters": [f.model_dump() for f in agent1.extracted_filters],
+                    "error": "unsupported_intent",
+                    "error_message": unsupported_message,
+                },
+                valid=False,
+                warnings=[unsupported_message],
+                plan_agent0=plan_agent0,
+                plan_agent1=plan_agent1,
+                plan_agent2=None,
+            )
+
         if agent1.needs_clarification:
             should_ask = self._should_ask_clarification(
                 mode=mode,

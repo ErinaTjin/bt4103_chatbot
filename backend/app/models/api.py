@@ -38,6 +38,7 @@ class ChatRequest(BaseModel):
     session_id: str           # frontend UUID, used for audit log tracing only
     conversation_id: int      # DB conversation_id — keys the session state
     question: str
+    conversation_history: list[dict[str, Any] | str] | None = None
     mode: Literal["fast", "strict"] = "fast"
     row_limit: int | None = Field(default=None, ge=1)
  
