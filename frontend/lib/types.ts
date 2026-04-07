@@ -80,6 +80,14 @@ export interface ConversationMessage {
   timestamp: string;
 }
  
+// Admin user entry from /admin/users
+export interface AdminUser {
+  id: number;
+  username: string;
+  role: "admin" | "user";
+  created_at: string;
+}
+
 // Admin audit log entry from /admin/logs
 export interface AuditLog {
   id: number;

@@ -1,4 +1,4 @@
-import { QueryResponse, Conversation, ConversationMessage, AuditLog } from './types';
+import { QueryResponse, Conversation, ConversationMessage, AuditLog, AdminUser } from './types';
 import { getAuthHeader } from './auth';
  
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -142,7 +142,62 @@ export async function deleteConversation(convId: number): Promise<void> {
 }
  
 // ── Admin ─────────────────────────────────────────────────────────────────────
- 
+
+export async function getAdminUsers(): Promise<AdminUser[]> {
+  const res = await fetch(`${BACKEND_URL}/admin/users`, {
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+  });
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to fetch users: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createAdminUser(
+  username: string,
+  password: string,
+  role: 'admin' | 'user',
+): Promise<AdminUser> {
+  const res = await fetch(`${BACKEND_URL}/admin/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify({ username, password, role }),
+  });
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `Failed to create user: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteAdminUser(userId: number): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/admin/users/${userId}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeader() },
+  });
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to delete user: ${res.status}`);
+  }
+}
+
+export async function updateAdminUserRole(
+  userId: number,
+  role: 'admin' | 'user',
+): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/admin/users/${userId}/role`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to update role: ${res.status}`);
+  }
+}
+
 export async function getAdminLogs(limit = 200, offset = 0): Promise<AuditLog[]> {
   const res = await fetch(
     `${BACKEND_URL}/admin/logs?limit=${limit}&offset=${offset}`,

@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getAdminLogs } from "@/lib/api";
-import { AuditLog } from "@/lib/types";
+import { getAdminLogs, getAdminUsers, createAdminUser, deleteAdminUser, updateAdminUserRole } from "@/lib/api";
+import { AuditLog, AdminUser } from "@/lib/types";
 import { VegaEmbed } from "react-vega";
-import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut, Download } from "lucide-react";
+import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut, Download, Users, Trash2, Plus } from "lucide-react";
  
 // ── helpers ───────────────────────────────────────────────────────────────────
  
@@ -64,11 +64,19 @@ export default function AdminDashboard() {
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
- 
+
+  // ── User management state ──────────────────────────────────────────────────
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"admin" | "user">("user");
+  const [creating, setCreating] = useState(false);
+
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
- 
+
   const fetchLogs = useCallback(async () => {
     setFetching(true);
     setError(null);
@@ -82,10 +90,55 @@ export default function AdminDashboard() {
       setFetching(false);
     }
   }, []);
- 
+
+  const fetchUsers = useCallback(async () => {
+    setUserError(null);
+    try {
+      setUsers(await getAdminUsers());
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : "Failed to load users");
+    }
+  }, []);
+
   useEffect(() => {
-    if (isAdmin) fetchLogs();
-  }, [isAdmin, fetchLogs]);
+    if (isAdmin) { fetchLogs(); fetchUsers(); }
+  }, [isAdmin, fetchLogs, fetchUsers]);
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreating(true);
+    setUserError(null);
+    try {
+      await createAdminUser(newUsername, newPassword, newRole);
+      setNewUsername(""); setNewPassword(""); setNewRole("user");
+      await fetchUsers();
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : "Failed to create user");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    if (!confirm("Delete this user? This cannot be undone.")) return;
+    setUserError(null);
+    try {
+      await deleteAdminUser(userId);
+      await fetchUsers();
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : "Failed to delete user");
+    }
+  };
+
+  const handleRoleChange = async (userId: number, role: "admin" | "user") => {
+    setUserError(null);
+    try {
+      await updateAdminUserRole(userId, role);
+      await fetchUsers();
+    } catch (e) {
+      setUserError(e instanceof Error ? e.message : "Failed to update role");
+    }
+  };
  
   if (loading || !user) {
     return (
@@ -254,6 +307,114 @@ export default function AdminDashboard() {
           />
         </div>
  
+        {/* User Management */}
+        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
+            <Users size={15} className="text-indigo-400" />
+            User Management
+          </h2>
+
+          {userError && (
+            <div className="flex items-center gap-2 p-3 mb-4 rounded-lg bg-red-950 border border-red-700 text-red-300 text-xs">
+              <AlertCircle size={14} /> {userError}
+            </div>
+          )}
+
+          {/* Create user form */}
+          <form onSubmit={handleCreateUser} className="flex flex-wrap gap-2 mb-4 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Username</label>
+              <input
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                required
+                placeholder="username"
+                className="px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-200 outline-none focus:border-indigo-500 w-36"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                placeholder="password"
+                className="px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-200 outline-none focus:border-indigo-500 w-36"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Role</label>
+              <select
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as "admin" | "user")}
+                className="px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-200 outline-none focus:border-indigo-500"
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={creating}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm text-white font-medium transition-colors"
+            >
+              <Plus size={14} /> {creating ? "Creating…" : "Add User"}
+            </button>
+          </form>
+
+          {/* Users table */}
+          <div className="overflow-auto">
+            <table className="w-full text-xs text-left text-gray-300">
+              <thead className="text-gray-500 uppercase">
+                <tr>
+                  <th className="pb-2 pr-4 font-medium">ID</th>
+                  <th className="pb-2 pr-4 font-medium">Username</th>
+                  <th className="pb-2 pr-4 font-medium">Role</th>
+                  <th className="pb-2 pr-4 font-medium">Created</th>
+                  <th className="pb-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-800/50">
+                    <td className="py-2 pr-4 text-gray-500">{u.id}</td>
+                    <td className="py-2 pr-4 font-medium">{u.username}</td>
+                    <td className="py-2 pr-4">
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleRoleChange(u.id, e.target.value as "admin" | "user")}
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border-0 outline-none cursor-pointer ${
+                          u.role === "admin"
+                            ? "bg-purple-900 text-purple-300"
+                            : "bg-gray-800 text-gray-300"
+                        }`}
+                      >
+                        <option value="user">user</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </td>
+                    <td className="py-2 pr-4 text-gray-500 whitespace-nowrap">
+                      {new Date(u.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="py-2">
+                      <button
+                        onClick={() => handleDeleteUser(u.id)}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-800 hover:bg-red-900 hover:text-red-300 text-gray-400 transition-colors"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr><td colSpan={5} className="py-4 text-center text-gray-600">No users found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {/* Charts row */}
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
