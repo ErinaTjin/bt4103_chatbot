@@ -1,3 +1,10 @@
+"""
+Thin service wrapper between main.py and the NL-to-SQL engine
+Initialises the NL2SQLEngine and optionally the NL2SQLLangGraph wrapper at startup
+Routes requests through LangGraph if available, falls back to the direct engine if not
+Catches QueryTimeoutError and ValueError (policy violations) and converts them to structured error responses with user-friendly messages rather than letting exceptions propagate to the HTTP layer
+Returns a consistent dict shape regardless of which execution path was taken
+"""
 import os
 from pathlib import Path
 from app.config import settings

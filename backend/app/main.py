@@ -1,3 +1,4 @@
+#FastAPI application entry point, defining API endpoints
 import json
 import logging
 import time
@@ -22,7 +23,7 @@ from app.db.auth_db import (
     write_audit_log, get_audit_logs, delete_conversation,
 )
 from app.models.api import (
-    SQLRequest, SQLResponse, NL2SQLRequest, NL2SQLResponse,
+    SQLRequest, SQLResponse, NL2SQLRequest, NL2SQLResponse, ChatRequest, ChatResponse
 )
 from app.models.auth import (
     LoginRequest, TokenResponse, UserOut, CreateUserRequest, UpdateRoleRequest,
@@ -35,10 +36,10 @@ from app.services.auth_service import (
     list_users, create_user, delete_user, update_user_role, register_user,
 )
 from nl2sql.core.context_agent import ContextAgent
-from app.models.api import ChatRequest, ChatResponse
 
 context_agent = ContextAgent()   # initialised once at module level
 
+#An async context manager that runs once when the server starts and once when it shuts down
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_auth_db()          # create users table + seed defaults
@@ -54,6 +55,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Global exception handler to catch unhandled exceptions and return JSON error responses instead of crashing the server
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logging.error(
@@ -75,12 +77,14 @@ app.add_middleware(
 
 bearer_scheme = HTTPBearer() 
  
+ #Dependency to get current user from the Authorization header; raises 401 if token is invalid or expired
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> dict:
     user = decode_token(credentials.credentials)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
- 
+
+#Dependency to require admin role for certain endpoints; raises 403 if user is not an admin
 def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -88,6 +92,8 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
  
 # ── Health ────────────────────────────────────────────────────────────────────
 
+# A simple health check endpoint to verify the server is running and can connect to DuckDB. 
+# Also checks if the NL2SQL engine is initialized and ready to handle requests, which can help catch initialization issues early.
 @app.get("/health")
 def health():
     try:
@@ -108,6 +114,9 @@ def health():
 
 # ── SQL direct endpoints ──────────────────────────────────────────────────────
 
+# Executes raw SQL directly against DuckDB, bypassing the NL2SQL engine. It is protected by the same authentication 
+# and authorization as the other endpoints, and it also enforces the same SQL policy and execution constraints 
+# For developers and debugging purposes; not intended for production use or exposed in the frontend UI
 @app.post("/sql/execute", response_model=SQLResponse)
 def sql_execute(req: SQLRequest, current_user: dict = Depends(get_current_user)):
     try:
@@ -120,7 +129,9 @@ def sql_execute(req: SQLRequest, current_user: dict = Depends(get_current_user))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DuckDB error: {e}")
 
-
+# Runs only the translation part of the pipeline (Agent 0 + Agent 1 + Agent 2) without executing the SQL against DuckDB. 
+# Returns the generated SQL, query plan, and warnings. Used for debugging and evaluating the pipeline — you can see what SQL was 
+# generated without running it. Not called by the chat frontend.
 @app.post("/nl2sql/translate")
 def nl2sql_translate(req: NL2SQLRequest, current_user: dict = Depends(get_current_user)):
     try:
@@ -145,7 +156,9 @@ def nl2sql_translate(req: NL2SQLRequest, current_user: dict = Depends(get_curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"NL2SQL translation error: {e}")
 
-
+# Runs the full pipeline including DuckDB execution but without session management or audit logging. 
+# This is the stateless version of /nl2sql/chat — it does not load or save session state, does not write to audit_logs, 
+# and does not check conversation ownership. Used for testing the pipeline directly. Not called by the chat frontend.
 @app.post("/nl2sql/execute", response_model=NL2SQLResponse)
 def nl2sql_execute(req: NL2SQLRequest, current_user: dict = Depends(get_current_user)):
     try:
@@ -165,6 +178,9 @@ def nl2sql_execute(req: NL2SQLRequest, current_user: dict = Depends(get_current_
 
 
 # ── Auth endpoints ─────────────────────────────────────────────────────────────────────
+# Called by login page and admin user management page in the frontend; not called by the chat interface
+# Takes {username, password}, calls authenticate_user() which verifies the password hash against the users table, 
+# creates a JWT token containing username and role, and returns it. If credentials are wrong, raises HTTP 401.
 @app.post("/auth/login", response_model=TokenResponse)
 def login(req: LoginRequest):
     user = authenticate_user(req.username, req.password)
@@ -173,6 +189,8 @@ def login(req: LoginRequest):
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(access_token=token, username=user["username"], role=user["role"])
  
+# Takes {username, password}, calls register_user() which hashes the password and inserts a new users row with role='user', 
+# creates a JWT, and returns it. If the username already exists, raises HTTP 409 Conflict.
 @app.post("/auth/register", response_model=TokenResponse, status_code=201)
 def register(req: RegisterRequest):
     try:
@@ -181,12 +199,17 @@ def register(req: RegisterRequest):
         raise HTTPException(status_code=409, detail=str(e))
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(access_token=token, username=user["username"], role=user["role"])
- 
+
+# A simple endpoint to return the current user's info based on the JWT token. Used by the frontend to check if the user is 
+# logged in and to get their username and role. Requires a valid JWT in the Authorization header.
 @app.get("/auth/me")
 def me(current_user: dict = Depends(get_current_user)):
     return current_user
 
 # ── Admin user management ─────────────────────────────────────────────────────
+# Endpoints for listing users, creating users, deleting users, and updating user roles. 
+# All require admin access. Called by the admin user management page in the frontend, not called by the chat interface. 
+# These endpoints interact with the users table in the auth database and allow admins to manage user accounts.
 
 @app.get("/admin/users", response_model=list[UserOut])
 def admin_list_users(_: dict = Depends(require_admin)):
@@ -211,7 +234,8 @@ def admin_update_role(user_id: int, req: UpdateRoleRequest, _: dict = Depends(re
     return {"ok": True}
 
 # ── Admin audit logs ──────────────────────────────────────────────────────────
- 
+# Returns paginated audit log records ordered by timestamp descending. The limit (default 200) and offset (default 0) 
+# query parameters support pagination. Admin only. This is what the admin dashboard table and latency chart read from.
 @app.get("/admin/logs")
 def admin_audit_logs(
     limit: int = 200,
@@ -222,6 +246,8 @@ def admin_audit_logs(
     return get_audit_logs(limit=limit, offset=offset)
 
 # ── Conversations ─────────────────────────────────────────────────────────────
+# Returns all conversations belonging to the current user, ordered by created_at DESC (newest first). This is what populates 
+# the sidebar when the user logs in. Note it filters strictly by user_id — users cannot see each other's conversations.
 @app.get("/conversations", response_model=list[ConversationOut])
 def list_conversations(current_user: dict = Depends(get_current_user)):
     with get_auth_conn() as conn:
@@ -231,6 +257,9 @@ def list_conversations(current_user: dict = Depends(get_current_user)):
         ).fetchall()
     return [dict(r) for r in rows]
  
+# Inserts a new conversation row with title='New conversation' and the current user's user_id. 
+# Returns the new conversation's id. Called by the frontend when the user sends their first message in a new chat — 
+# the conversation is created lazily on the first send, not when the user clicks "New chat".
 @app.post("/conversations", response_model=ConversationCreated, status_code=201)
 def create_conversation(current_user: dict = Depends(get_current_user)):
     with get_auth_conn() as conn:
@@ -240,7 +269,10 @@ def create_conversation(current_user: dict = Depends(get_current_user)):
         )
         conn.commit()
         return {"id": cur.lastrowid}
- 
+
+# Returns all messages for a conversation in chronological order. First verifies the conversation belongs to the current user — 
+# if conv_id does not exist or belongs to a different user, raises HTTP 404. This ownership check prevents users from 
+# reading each other's message history by guessing conversation IDs.
 @app.get("/conversations/{conv_id}/messages", response_model=list[ConversationMessageOut])
 def get_messages(conv_id: int, current_user: dict = Depends(get_current_user)):
     with get_auth_conn() as conn:
@@ -255,7 +287,10 @@ def get_messages(conv_id: int, current_user: dict = Depends(get_current_user)):
             (conv_id,),
         ).fetchall()
     return [dict(r) for r in rows]
- 
+
+# Inserts a new message into a conversation. Also verifies ownership. Has one extra behaviour: if the message role is 'user' and 
+# the conversation title is still 'New conversation' (i.e. this is the first message), it updates the conversation title to the 
+# first 60 characters of the message content. This is how sidebar titles are set automatically.
 @app.post("/conversations/{conv_id}/messages", response_model=ConversationMessageOut, status_code=201)
 def append_message(conv_id: int, req: AppendMessageRequest, current_user: dict = Depends(get_current_user)):
     with get_auth_conn() as conn:
@@ -279,17 +314,13 @@ def append_message(conv_id: int, req: AppendMessageRequest, current_user: dict =
     return dict(row)
 
 # ── Session management + NL2SQL chat ─────────────────────────────────────────
-
-"""Implements the /nl2sql/chat endpoint which handles follow-up questions in a conversational manner. It uses a
-ContextAgent to resolve follow-up questions into standalone questions, and then passes them to the nl2sql_service for
-translation and execution. The session state is loaded at the beginning of the request, updated with the new chat history,
-active filters, last executed SQL, and warnings, and then saved back to the database. The endpoint also supports
-resetting the session and clearing filters through additional endpoints."""
+# main endpoint for the chat interface. Takes a question and conversation history, loads session state, resolves follow-ups, 
+# translates to SQL, executes, updates session, writes audit log, and returns response in a consistent format 
+# regardless of which step failed. This is the core of the NL2SQL chat functionality.
 @app.post("/nl2sql/chat", response_model=ChatResponse)
 def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
-    Session is keyed by conversation_id — each conversation has its own isolated
-    NL2SQL state (active_filters, chat_history for Agent 0).
+    Session is keyed by conversation_id — each conversation has its own isolated NL2SQL state (active_filters, chat_history for Agent 0).
     This prevents different conversations from sharing session memory.
     """
     user_id  = current_user["id"]
@@ -297,7 +328,8 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     conv_id  = req.conversation_id
     t_start  = time.perf_counter()
  
-    # Verify the conversation belongs to this user
+    # Verify the conversation belongs to this user. If not, raises HTTP 404. 
+    # This prevents a user from injecting their question into another user's conversation session
     with get_auth_conn() as conn:
         conv = conn.execute(
             "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
@@ -307,6 +339,8 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Conversation not found")
  
     # Load session state scoped to THIS conversation
+    # Calls load_session(conv_id) to retrieve the conversation's {chat_history, active_filters, last_sql, warnings} from SQLite. 
+    # If no session exists yet for this conversation, returns an empty state.
     state = load_session(conv_id)
     request_history = req.conversation_history or []
     session_history = state.get("chat_history", [])
@@ -325,6 +359,8 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
             )
  
     # ── Agent 0: resolve follow-up into standalone question ──
+    # Calls context_agent.resolve() with the question, the last 6 messages of chat_history, and the current active_filters. 
+    # Returns a ContextResolution with standalone_question, is_follow_up, and needs_clarification
     try:
         resolution = context_agent.resolve(
             question=context_question,
@@ -334,8 +370,10 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     except Exception as e:
         logging.error("context_agent.resolve failed: %s", e, exc_info=True)
         raise
- 
-    if resolution.needs_clarification:
+    
+    if resolution.needs_clarification: 
+        #If needs_clarification=True, writes a clarification audit log entry and returns immediately with the clarification question. 
+        # The pipeline stops here — no SQL is generated.
         clarification_message = resolution.clarification_question or "Clarification required."
         write_audit_log(
             user_id=user_id, username=username, session_id=req.session_id,
@@ -375,9 +413,14 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     resolved_q = resolution.standalone_question
  
     # ── Gate active_filters based on is_follow_up ──
+    #is_follow_up=True, passes the current active_filters to the engine so they are inherited. 
+    # If is_follow_up=False, passes an empty dict so the engine starts fresh with no inherited filters.
+
     filters_for_engine = state["active_filters"] if resolution.is_follow_up else {}
  
     # ── Engine: Agent1 + Agent2 ──
+    # Calls nl2sql_service.translate_and_execute() with the resolved standalone question. 
+    # This runs Agent 1, Agent 2, validation, and DuckDB execution. If this raises an unhandled exception, logs it to the audit log 
     try:
         result = nl2sql_service.translate_and_execute(
             question=resolved_q,
@@ -395,7 +438,8 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
             error_message=str(exc),
         )
         raise
- 
+    
+    # Audit loggig: elapsed time, determins guardrail decision, row count, warnings, generated SQL, etc.
     elapsed_ms = int((time.perf_counter() - t_start) * 1000)
     data_obj   = result.get("data") or {}
     rows_list  = data_obj.get("rows") if isinstance(data_obj, dict) else None
@@ -424,6 +468,10 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
     )
  
     # ── Update session state scoped to this conversation ──
+    # Session update and response. Extracts the new filters from Agent 1's output, merges or replaces 
+    # active_filters depending on is_follow_up, appends the question and resolved question to chat_history, 
+    # trims history to the last 40 messages, saves the updated session back to SQLite, and returns the full response 
+    # dict to the frontend
     new_extracted = result.get("plan", {}).get("extracted_filters") or []
     new_filter_dict = {
         f["field"]: f["value"]
@@ -456,14 +504,12 @@ def nl2sql_chat(req: ChatRequest, current_user: dict = Depends(get_current_user)
  
  
 # ── Session endpoints (all conversation-scoped) ───────────────────────────────
- 
+# Reset button endpoint: clears the session state for a conversation without deleting the conversation or its messages.
+# Verifies ownership then calls reset_session(conv_id) which overwrites the session with an empty state — chat_history=[], 
+# active_filters={}, last_sql=None.
+# audit logs are unaffected and still link to the conversation, but the session state is cleared so the user can start fresh while still seeing their old messages and audit history.
 @app.delete("/session/{conv_id}/reset")
 def reset_conv_session(conv_id: int, current_user: dict = Depends(get_current_user)):
-    """
-    Reset NL2SQL session state for a conversation (clears active_filters and
-    Agent 0 chat_history). The conversation record and its messages are kept
-    so the user can still see them in the sidebar. Audit logs are unaffected.
-    """
     with get_auth_conn() as conn:
         conv = conn.execute(
             "SELECT id FROM conversations WHERE id = ? AND user_id = ?",
@@ -474,7 +520,7 @@ def reset_conv_session(conv_id: int, current_user: dict = Depends(get_current_us
     reset_session(conv_id)
     return {"status": "reset", "conversation_id": conv_id}
  
- 
+# Clear filters endpoint: clears only the active_filters in the session state for a conversation, without affecting chat_history or other session fields.
 @app.patch("/session/{conv_id}/filters")
 def clear_conv_filters(conv_id: int, current_user: dict = Depends(get_current_user)):
     """Clear active filters for a conversation without touching chat history."""
@@ -488,7 +534,8 @@ def clear_conv_filters(conv_id: int, current_user: dict = Depends(get_current_us
     state = clear_filters(conv_id)
     return {"status": "filters_cleared", "active_filters": state["active_filters"]}
  
- 
+# Verifies ownership then returns the raw session state dict for a conversation. 
+# Used for debugging — the frontend does not call this in normal operation.
 @app.get("/session/{conv_id}")
 def get_conv_session(conv_id: int, current_user: dict = Depends(get_current_user)):
     """Return session state for a conversation."""
@@ -501,15 +548,11 @@ def get_conv_session(conv_id: int, current_user: dict = Depends(get_current_user
         raise HTTPException(status_code=404, detail="Conversation not found")
     return load_session(conv_id)
  
- 
+# Hard delete conversation: deletes the conversation row, all its messages, and its session state. 
+# Audit logs for queries in this conversation are preserved (user_id kept, conversation link set to NULL via ON DELETE SET NULL). 
+# The conversation will disappear from the sidebar immediately.
 @app.delete("/conversations/{conv_id}", status_code=204)
 def delete_conv(conv_id: int, current_user: dict = Depends(get_current_user)):
-    """
-    Hard-delete a conversation, all its messages, and its session state.
-    Audit logs for queries in this conversation are preserved (user_id kept,
-    conversation link set to NULL via ON DELETE SET NULL).
-    The conversation will disappear from the sidebar immediately.
-    """
     deleted = delete_conversation(conv_id, current_user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found")

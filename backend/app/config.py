@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / ".env"
+ENV_PATH = BASE_DIR / ".env" #load environment variable from .env, contains PARQUET_KEY
 load_dotenv(dotenv_path=ENV_PATH)
 
 class Settings(BaseModel):
