@@ -17,3 +17,8 @@ venv/
 *.duckdb
 *.db
 *.wal
+
+# Virtual environment
+venv/
+.venv/
+ven/

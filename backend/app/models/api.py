@@ -40,7 +40,8 @@ class NL2SQLResponse(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str           # frontend UUID, used for audit log tracing only
     conversation_id: int      # DB conversation_id — keys the session state
-    question: str
+    question: str   
+    conversation_history: list[dict] | None = None
     mode: Literal["fast", "strict"] = "fast"
     row_limit: int | None = Field(default=None, ge=1)
  
