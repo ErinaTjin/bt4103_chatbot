@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getAdminLogs, getAdminUsers, createAdminUser, deleteAdminUser, updateAdminUserRole } from "@/lib/api";
-import { AuditLog, AdminUser } from "@/lib/types";
+import { getAdminLogs, getAdminUsers, createAdminUser, deleteAdminUser, updateAdminUserRole, getAuthLogs } from "@/lib/api";
+import { AuditLog, AdminUser, AuthLog } from "@/lib/types";
 import { VegaEmbed } from "react-vega";
 import { RefreshCw, AlertCircle, ShieldAlert, Activity, Table2, LogOut, Download, Users, Trash2, Plus } from "lucide-react";
  
@@ -65,6 +65,9 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
+  // ── Auth log state ─────────────────────────────────────────────────────────
+  const [authLogs, setAuthLogs] = useState<AuthLog[]>([]);
+
   // ── User management state ──────────────────────────────────────────────────
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userError, setUserError] = useState<string | null>(null);
@@ -100,9 +103,15 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const fetchAuthLogs = useCallback(async () => {
+    try {
+      setAuthLogs(await getAuthLogs(200));
+    } catch { /* non-critical */ }
+  }, []);
+
   useEffect(() => {
-    if (isAdmin) { fetchLogs(); fetchUsers(); }
-  }, [isAdmin, fetchLogs, fetchUsers]);
+    if (isAdmin) { fetchLogs(); fetchUsers(); fetchAuthLogs(); }
+  }, [isAdmin, fetchLogs, fetchUsers, fetchAuthLogs]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -548,6 +557,54 @@ export default function AdminDashboard() {
                       </td>
                       <td className="py-1.5 text-right">
                         {l.row_count !== null ? l.row_count : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Auth event log */}
+        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
+          <h2 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+            <ShieldAlert size={15} className="text-indigo-400" />
+            Auth Event Log ({authLogs.length})
+          </h2>
+          {authLogs.length === 0 ? (
+            <EmptyState text="No auth events recorded" />
+          ) : (
+            <div className="overflow-auto max-h-80">
+              <table className="w-full text-xs text-left text-gray-300">
+                <thead className="sticky top-0 bg-gray-900 text-gray-500 uppercase">
+                  <tr>
+                    <th className="pb-2 pr-3 font-medium">Time</th>
+                    <th className="pb-2 pr-3 font-medium">Event</th>
+                    <th className="pb-2 pr-3 font-medium">Actor</th>
+                    <th className="pb-2 pr-3 font-medium">Target</th>
+                    <th className="pb-2 pr-3 font-medium">Status</th>
+                    <th className="pb-2 font-medium">Detail</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {authLogs.map((l) => (
+                    <tr key={l.id} className="hover:bg-gray-800/50">
+                      <td className="py-1.5 pr-3 whitespace-nowrap text-gray-500">
+                        {new Date(l.timestamp + 'Z').toLocaleString()}
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono text-indigo-300">{l.event}</td>
+                      <td className="py-1.5 pr-3">{l.actor ?? "—"}</td>
+                      <td className="py-1.5 pr-3">{l.target ?? "—"}</td>
+                      <td className="py-1.5 pr-3">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          l.success ? "bg-green-900 text-green-300" : "bg-red-900 text-red-300"
+                        }`}>
+                          {l.success ? "success" : "failed"}
+                        </span>
+                      </td>
+                      <td className="py-1.5 text-gray-500 max-w-xs truncate" title={l.detail ?? ""}>
+                        {l.detail ?? "—"}
                       </td>
                     </tr>
                   ))}

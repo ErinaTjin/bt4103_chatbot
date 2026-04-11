@@ -106,6 +106,17 @@ export interface AuditLog {
   result_preview: string | null; // JSON-encoded first 10 result rows
 }
  
+// Auth event log entry from /admin/auth-logs
+export interface AuthLog {
+  id: number;
+  timestamp: string;
+  event: string;
+  actor: string | null;
+  target: string | null;
+  success: number; // 1 = success, 0 = failure
+  detail: string | null;
+}
+
 // Request body for /nl2sql/chat endpoint (shape of response frontend expects from backend /nl2sql/chat)
 export interface ChatResponse extends QueryResponse {
   session_id: string;

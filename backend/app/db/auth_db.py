@@ -1,11 +1,12 @@
 """
-Single SQLite database for all user-related data and session state, replacing the previous sessions.db. This simplifies 
+Single SQLite database for all user-related data and session state, replacing the previous sessions.db. This simplifies
 data management and ensures session persistence across backend restarts. The schema includes:
 - users         : accounts + roles
 - conversations : per-user chat history
 - messages      : individual chat messages
 - sessions      : NL2SQL session state (active_filters, last_sql, etc.)
 - audit_logs    : one record per query for admin auditing
+- auth_logs     : one record per auth event (login, logout, register, user management)
 """
 import sqlite3
 import os
@@ -62,6 +63,18 @@ def init_db() -> None:
                 conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
                 state           TEXT    NOT NULL DEFAULT '{}',
                 updated_at      TEXT    NOT NULL
+            )
+        """)
+        # Auth event log — one row per login/logout/register/user-mgmt action
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_logs (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                event     TEXT NOT NULL,
+                actor     TEXT,
+                target    TEXT,
+                success   INTEGER NOT NULL DEFAULT 1,
+                detail    TEXT
             )
         """)
         # Audit log — one row per query attempt
@@ -224,6 +237,44 @@ def get_audit_logs(limit: int = 200, offset: int = 0) -> list[dict]:
                       guardrail_decision, guardrail_reasons, warnings, error_message,
                       result_preview
                FROM audit_logs
+               ORDER BY timestamp DESC
+               LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Auth event log functions ──────────────────────────────────────────────────
+
+def write_auth_log(
+    event: str,
+    actor: str | None = None,
+    target: str | None = None,
+    success: bool = True,
+    detail: str | None = None,
+) -> None:
+    """
+    Record an auth event.
+    event  : 'login' | 'logout' | 'register' | 'create_user' | 'delete_user' | 'update_role'
+    actor  : username of the user performing the action
+    target : username of the affected user (for admin user-management events)
+    success: True if the action succeeded, False if it failed (e.g. wrong password)
+    detail : optional free-text note (e.g. failure reason, new role value)
+    """
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO auth_logs (event, actor, target, success, detail)
+               VALUES (?, ?, ?, ?, ?)""",
+            (event, actor, target, 1 if success else 0, detail),
+        )
+        conn.commit()
+
+
+def get_auth_logs(limit: int = 200, offset: int = 0) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT id, timestamp, event, actor, target, success, detail
+               FROM auth_logs
                ORDER BY timestamp DESC
                LIMIT ? OFFSET ?""",
             (limit, offset),

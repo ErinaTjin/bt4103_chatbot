@@ -1,4 +1,4 @@
-import { QueryResponse, Conversation, ConversationMessage, AuditLog, AdminUser } from './types';
+import { QueryResponse, Conversation, ConversationMessage, AuditLog, AuthLog, AdminUser } from './types';
 import { getAuthHeader } from './auth';
  
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
@@ -206,6 +206,18 @@ export async function getAdminLogs(limit = 200, offset = 0): Promise<AuditLog[]>
   if (!res.ok) {
     handleUnauthorized(res.status);
     throw new Error(`Failed to fetch audit logs: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getAuthLogs(limit = 200, offset = 0): Promise<AuthLog[]> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/auth-logs?limit=${limit}&offset=${offset}`,
+    { headers: { 'Content-Type': 'application/json', ...getAuthHeader() } },
+  );
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new Error(`Failed to fetch auth logs: ${res.status}`);
   }
   return res.json();
 }

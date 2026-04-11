@@ -21,6 +21,7 @@ from app.db.auth_db import (
     get_conn as get_auth_conn,
     load_session, save_session, reset_session, clear_filters,
     write_audit_log, get_audit_logs, delete_conversation,
+    write_auth_log, get_auth_logs,
 )
 from app.models.api import (
     SQLRequest, SQLResponse, NL2SQLRequest, NL2SQLResponse, ChatRequest, ChatResponse
@@ -185,18 +186,22 @@ def nl2sql_execute(req: NL2SQLRequest, current_user: dict = Depends(get_current_
 def login(req: LoginRequest):
     user = authenticate_user(req.username, req.password)
     if not user:
+        write_auth_log(event="login", actor=req.username, success=False, detail="Invalid credentials")
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    write_auth_log(event="login", actor=user["username"], success=True)
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(access_token=token, username=user["username"], role=user["role"])
- 
-# Takes {username, password}, calls register_user() which hashes the password and inserts a new users row with role='user', 
+
+# Takes {username, password}, calls register_user() which hashes the password and inserts a new users row with role='user',
 # creates a JWT, and returns it. If the username already exists, raises HTTP 409 Conflict.
 @app.post("/auth/register", response_model=TokenResponse, status_code=201)
 def register(req: RegisterRequest):
     try:
         user = register_user(req.username, req.password)
     except ValueError as e:
+        write_auth_log(event="register", actor=req.username, success=False, detail=str(e))
         raise HTTPException(status_code=409, detail=str(e))
+    write_auth_log(event="register", actor=user["username"], success=True)
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(access_token=token, username=user["username"], role=user["role"])
 
@@ -216,21 +221,33 @@ def admin_list_users(_: dict = Depends(require_admin)):
     return list_users()
  
 @app.post("/admin/users", response_model=UserOut, status_code=201)
-def admin_create_user(req: CreateUserRequest, _: dict = Depends(require_admin)):
+def admin_create_user(req: CreateUserRequest, current_admin: dict = Depends(require_admin)):
     try:
-        return create_user(req.username, req.password, req.role)
+        new_user = create_user(req.username, req.password, req.role)
+        write_auth_log(event="create_user", actor=current_admin["username"], target=req.username, detail=f"role={req.role}")
+        return new_user
     except Exception as e:
+        write_auth_log(event="create_user", actor=current_admin["username"], target=req.username, success=False, detail=str(e))
         raise HTTPException(status_code=400, detail=f"Could not create user: {e}")
- 
+
 @app.delete("/admin/users/{user_id}", status_code=204)
-def admin_delete_user(user_id: int, _: dict = Depends(require_admin)):
+def admin_delete_user(user_id: int, current_admin: dict = Depends(require_admin)):
+    # Fetch username before deleting so we can log it
+    with get_auth_conn() as conn:
+        row = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+    target_username = row["username"] if row else str(user_id)
     if not delete_user(user_id):
         raise HTTPException(status_code=404, detail="User not found")
- 
+    write_auth_log(event="delete_user", actor=current_admin["username"], target=target_username)
+
 @app.patch("/admin/users/{user_id}/role")
-def admin_update_role(user_id: int, req: UpdateRoleRequest, _: dict = Depends(require_admin)):
+def admin_update_role(user_id: int, req: UpdateRoleRequest, current_admin: dict = Depends(require_admin)):
+    with get_auth_conn() as conn:
+        row = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+    target_username = row["username"] if row else str(user_id)
     if not update_user_role(user_id, req.role):
         raise HTTPException(status_code=404, detail="User not found")
+    write_auth_log(event="update_role", actor=current_admin["username"], target=target_username, detail=f"role={req.role}")
     return {"ok": True}
 
 # ── Admin audit logs ──────────────────────────────────────────────────────────
@@ -242,8 +259,18 @@ def admin_audit_logs(
     offset: int = 0,
     _: dict = Depends(require_admin),
 ):
-    """Return paginated audit log records. Admin only."""
+    """Return paginated NL2SQL query audit log records. Admin only."""
     return get_audit_logs(limit=limit, offset=offset)
+
+
+@app.get("/admin/auth-logs")
+def admin_auth_logs(
+    limit: int = 200,
+    offset: int = 0,
+    _: dict = Depends(require_admin),
+):
+    """Return paginated auth event log records. Admin only."""
+    return get_auth_logs(limit=limit, offset=offset)
 
 # ── Conversations ─────────────────────────────────────────────────────────────
 # Returns all conversations belonging to the current user, ordered by created_at DESC (newest first). This is what populates 
