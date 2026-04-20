@@ -1,3 +1,4 @@
+# Wrapper layer to abstract away the details of interacting with the LLM, allowing for easier swapping of LLM backends in the future if needed.
 import json
 import os
 import requests

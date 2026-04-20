@@ -1,3 +1,6 @@
+# Agent 1 extractor: responsible for extracting the semantic intent from the user's question and conversation history, 
+# without any SQL generation or database-specific logic.
+# Prompt formatting, LLM call, parse and repair
 import json
 import re
 from typing import Any
@@ -21,6 +24,9 @@ class Agent1QueryPlanExtractor:
     def __init__(self, llm: LLMAdapter | None = None) -> None:
         self.llm = llm or LLMAdapter()
 
+    # Formats the USER_PROMPT_TEMPLATE from agent1_prompts.py by injecting question (stripped of whitespace), 
+    # conversation history serialised to JSON, active filters serialised to JSON
+    # The result is the full user-turn prompt string that gets sent to the LLM alongside the system prompt.
     def _build_prompt(
         self,
         question: str,
@@ -34,6 +40,19 @@ class Agent1QueryPlanExtractor:
             history=history_str,
             active_filters=active_filters_str,
         )
+    
+    # This is what engine.py and the LangGraph pipeline call. It sends the prompt to the LLM and tries 
+    # increasingly desperate strategies to get a valid Agent1ContextSummary object back.
+    # Attempt 1 — clean and parse directly: Calls _clean_json on the raw LLM output to strip markdown fences, then 
+    # tries to parse it directly with Pydantic's model_validate_json. If this succeeds, returns immediately.
+    # Attempt 2 — structural repair: If parsing fails, passes the cleaned text through json_repair 
+    # (a library that fixes common JSON syntax errors like unclosed brackets, trailing commas, missing quotes) and 
+    # tries Pydantic again. This handles cases where the model produced almost-valid JSON with minor structural errors.
+    # Attempt 3 — LLM retry: If repair also fails, appends an explicit instruction to the original prompt telling the 
+    # model to output only valid JSON, then calls the LLM again. Tries to parse the new response.
+    # Attempt 4 — repair the retry: If the retried LLM response also fails to parse, runs json_repair on it one more 
+    # time and does a final model_validate_json. If this fails, the exception propagates up to the caller — 
+    # there's no further fallback.
 
     def extract(
         self,
@@ -75,6 +94,7 @@ class Agent1QueryPlanExtractor:
 
             return Agent1ContextSummary.model_validate_json(self._clean_json(repaired_retry))
 
+    # preprocessing before any parse attempt
     @staticmethod
     def _clean_json(text: str) -> str:
         if "```" in text:

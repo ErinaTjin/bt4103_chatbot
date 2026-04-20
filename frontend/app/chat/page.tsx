@@ -26,7 +26,6 @@ import {
   RotateCcw,
   ShieldAlert,
   Trash2,
-  X,
   CheckCircle2,
 } from "lucide-react";
  
@@ -742,27 +741,7 @@ export default function ChatPage() {
                   <span className="truncate max-w-[120px]" title={display}>
                     {display}
                   </span>
-                  <button
-                    onClick={() => {
-                      // Remove this filter locally and clear session filters on backend
-                      const convId = activeConvIdRef.current;
-                      if (convId !== null)
-                        clearSessionFilters(convId).catch(console.error);
-                      setConvActiveFilters((prev) => {
-                        const next = new Map(prev);
-                        const current = {
-                          ...(next.get(activeConvId ?? "new") ?? {}),
-                        };
-                        delete current[field];
-                        next.set(activeConvId ?? "new", current);
-                        return next;
-                      });
-                    }}
-                    className="ml-0.5 hover:text-blue-900 transition-colors"
-                    title={`Remove ${label} filter`}
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
+ 
                 </span>
               );
             })

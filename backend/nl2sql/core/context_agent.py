@@ -13,7 +13,8 @@ class ContextAgent:
     """
     Context resolver for follow-up user turns.
     """
-
+    # compiled patterns for detecting compare/contrast questions and whether they have explicit groupings, to 
+    # apply special clarification rules in those cases. See _apply_compare_clarification_rules.
     def __init__(self, llm: LLMAdapter | None = None) -> None:
         self.llm = llm or LLMAdapter()
 
@@ -51,6 +52,7 @@ class ContextAgent:
     )
     _TEMPORAL_GROUP_TERMS = ("year", "month", "quarter", "date", "time")
 
+    # format prompt
     def _build_prompt(
         self,
         question: str,
@@ -75,10 +77,13 @@ class ContextAgent:
 
         return USER_PROMPT_TEMPLATE.format(
             question=question.strip(),
-            history=json.dumps(conversation_history or [], ensure_ascii=True, indent=2),
+            history=json.dumps(slim_history or [], ensure_ascii=True, indent=2),
             active_filters=json.dumps(active_filters or {}, ensure_ascii=True, indent=2),
         )
 
+    # This is what engine.py and the LangGraph pipeline call. It sends the prompt to the LLM and tries to get a 
+    # valid ContextResolution object back. It has multiple fallback strategies if the initial parse fails, 
+    # including a retry with an explicit instruction to output valid JSON.
     def resolve(
         self,
         question: str,
@@ -100,6 +105,7 @@ class ContextAgent:
             conversation_history=conversation_history,
         )
 
+    # only activates if the question contains a comparison word (via _COMPARE_PATTERN)
     def _apply_compare_clarification_rules(
         self,
         *,

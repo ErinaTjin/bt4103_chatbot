@@ -1,3 +1,6 @@
+# Graph based implementation of the NL2SQL pipeline, orchestrating the existing components in a more 
+# structured way and enabling better handling of retries, clarifications, and error states.
+# activated by setting USE_LANGGRAPH=true
 from __future__ import annotations
 
 import os

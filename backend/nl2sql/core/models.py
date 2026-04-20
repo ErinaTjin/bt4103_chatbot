@@ -1,3 +1,4 @@
+# Pydantic schemas for representing the structured query plan and related data structures in the NL2SQL system.
 from __future__ import annotations
 
 from enum import Enum
@@ -30,7 +31,7 @@ class SortOption(BaseModel):
 class OutputPrefs(BaseModel):
     preferred_visualization: Optional[str] = None
 
-
+# Not used
 class QueryPlan(BaseModel):
     intent: Intent
     metric: Optional[str] = Field(default="count_patients")
@@ -57,7 +58,7 @@ class QueryPlan(BaseModel):
             return 50
         return max(1, int(v))
 
-
+# Not used
 class PhysicalPlan(BaseModel):
     intent: Intent
     metric_sql: str

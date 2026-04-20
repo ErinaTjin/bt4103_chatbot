@@ -20,6 +20,10 @@ class Agent2QueryPlanResolver:
     def __init__(self, llm: LLMAdapter | None = None) -> None:
         self.llm = llm or LLMAdapter()
 
+    # Formats the USER_PROMPT_TEMPLATE from agent2_prompts.py by injecting user question, intent summary, schema context, 
+    # terminology mappings, business rules, SQL snippets, safety instructions, conversation history serialised to JSON, 
+    # active filters serialised to JSON
+    # The result is the full user-turn prompt string that gets sent to the LLM alongside the system prompt.
     def _build_prompt(
         self,
         user_question: str,
@@ -46,6 +50,8 @@ class Agent2QueryPlanResolver:
             active_filters=active_filters_str,
         )
 
+    # This is what engine.py and the LangGraph pipeline call. It sends the prompt to the LLM and tries to get a valid 
+    # Agent2SQLWriterOutput object back.     
     def resolve(
         self,
         *,

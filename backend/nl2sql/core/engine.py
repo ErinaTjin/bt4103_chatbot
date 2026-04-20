@@ -1,3 +1,5 @@
+# main orchestrator that ties together the LLM adapter, Agent1 extractor, Agent2 resolver, and context agent to 
+# perform the full NL2SQL translation process.
 from __future__ import annotations
 
 import re
@@ -73,6 +75,7 @@ class NL2SQLEngine:
                 eav_like.add(table_name)
         return eav_like
 
+    # compile the schema information
     def _build_schema_context(self, relevant_only: bool = False, hint: str = "") -> str:
         if not self.semantic_api or not hasattr(self.semantic_api, "tables"):
             return "No schema context provided."
@@ -113,7 +116,7 @@ class NL2SQLEngine:
                 )
 
         return "\n".join(lines)
-
+    # compile the terminology mappings
     def _build_terminology_mappings(self) -> str:
         if not self.semantic_api:
             return "No terminology mappings provided."
@@ -142,7 +145,7 @@ class NL2SQLEngine:
                 )
 
         return "\n".join(lines)
-
+    # compile the business rules and best practices for SQL generation
     def _build_business_rules(self) -> str:
         return "\n".join(
             [
@@ -158,7 +161,7 @@ class NL2SQLEngine:
                 "- Prefer COUNT(DISTINCT person.person_id) for patient counts.",
             ]
         )
-
+    # compile example SQL snippets for common patterns and edge cases
     def _build_sql_snippets(self) -> str:
         return "\n".join(
             [
@@ -376,7 +379,7 @@ class NL2SQLEngine:
                 ");",
             ]
         )
-
+    # compile the safety instructions and guardrails for SQL generation
     def _build_safety_instructions(self) -> str:
         return "\n".join(
             [
@@ -390,6 +393,7 @@ class NL2SQLEngine:
     
     ALLOWED_FILTER_OPS = {"=", "!=", ">", "<", ">=", "<=", "in", "like", "or_like"}
 
+    # validate the extracted query plan for completeness and consistency before passing to Agent2
     def _validate_query_plan(self, summary: Agent1ContextSummary) -> List[str]:
         errors: List[str] = []
         if not summary.intent_summary or not summary.intent_summary.strip():
@@ -416,6 +420,7 @@ class NL2SQLEngine:
                     errors.append(f"filters[{i}].value is None.")
         return errors
 
+    # rewrite SQL to qualify table names with "anchor_view" and enforce allowed tables only
     def _qualify_table_names(self, sql: str) -> str:
         if not self.allowed_tables:
             return sql
@@ -432,6 +437,7 @@ class NL2SQLEngine:
             flags=re.IGNORECASE,
         )
 
+    # validate the generated SQL for basic safety and correctness before execution
     def _validate_sql_shape(self, sql: str) -> str | None:
         candidate = sql.strip().rstrip(";").strip().lower()
         if not candidate:
@@ -451,6 +457,7 @@ class NL2SQLEngine:
                 return f"Agent2 SQL contains disallowed keyword: {kw}."
         return None
 
+    # extract referenced table names from the SQL for semantic validation and context checks
     def _extract_referenced_tables(self, sql: str) -> set[str]:
         pattern = re.compile(
             r"""
@@ -479,6 +486,8 @@ class NL2SQLEngine:
                 tables.add(table.lower())
         return tables
 
+    # validate the SQL semantics against the user query, extracted filters, active filters, and schema context to 
+    # identify potential issues or missing elements
     def _validate_sql_semantics(
         self,
         sql: str,
@@ -545,6 +554,7 @@ class NL2SQLEngine:
 
         return blocking, advisory
 
+    # fix common SQL generation patterns that may cause syntax errors or logical issues, especially around string concatenation and casting
     def _fix_concat_comma(self, sql: str) -> str:
         """
         Fix CONCAT-related SQL generation bugs:
@@ -605,6 +615,8 @@ class NL2SQLEngine:
         # This avoids silently continuing to SQL generation with ambiguous intent.
         return True
 
+    # The main translation function that orchestrates the multi-agent process of converting user queries into SQL, 
+    # with context resolution, intent extraction, validation, and safety checks at each step.
     def translate(
         self,
         user_query: str,

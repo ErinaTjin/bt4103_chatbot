@@ -1,3 +1,5 @@
+# loads the json files in semantic_layer/ and converts them into structured Python objects for use by the NL2SQL system, 
+# especially Agent1 and Agent2 for context understanding and SQL generation. This layer abstracts away the raw JSON
 import json
 from dataclasses import dataclass
 from pathlib import Path
